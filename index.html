@@ -1,0 +1,224 @@
+<!DOCTYPE html>
+<html lang="es">
+  <head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <link rel="icon" type="image/png" href="recursos/IMG_5120.PNG">
+    <title>Portafolio Pedro</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <style>
+      html {
+        scroll-padding-top: 80px; /* Altura del menú fijo */
+      }
+      body::before {
+        content: "";
+        position: fixed;
+        top: 0;
+        left: 0;
+        width: 100vw;
+        height: 100vh;
+        background: linear-gradient(to bottom right, #E6E6FA, #F8F8FF);
+        z-index: -1;
+        opacity: 0.4;
+      }
+      .skill-icon {
+        transition: transform 0.3s ease;
+      }
+      .skill-icon:hover {
+        transform: scale(1.2);
+      }
+      /* Movil */
+      #menu-toggle {
+        display: none;
+      }
+      #menu-toggle:checked + nav {
+        display: block;
+      }
+      @media (max-width: 768px) {
+        nav {
+          display: none;
+          flex-direction: column;
+          background-color: #E6E6FA;
+          position: absolute;
+          top: 60px;
+          right: 0;
+          width: 200px;
+          border-radius: 0 0 0 10px;
+          box-shadow: 0 4px 6px rgba(0,0,0,0.1);
+          padding: 10px 0;
+          z-index: 60;
+        }
+        nav a {
+          padding: 10px 20px;
+          display: block;
+          color: #4c1d95;
+        }
+        nav a:hover {
+          background-color: #c4b5fd;
+          color: #3b0764;
+        }
+        .menu-btn {
+          display: block;
+          cursor: pointer;
+        }
+      }
+    </style>
+  </head>
+
+  <body class="bg-purple-50 text-gray-900 font-sans">
+     <!-- Navbar -->
+    <header class="bg-purple-100 shadow fixed w-full z-50">
+      <div class="container mx-auto flex justify-between items-center p-4">
+        <div class="flex items-center space-x-4">
+          <img src="recursos/IMG_5120.PNG" alt="Pedro Carramolino" class="w-12 h-12 rounded-full object-cover object-top">
+          <a href="#home" class="font-bold text-lg">Pedro Carramolino</a>
+        </div>
+
+        <!-- Botón menú hamburguesa -->
+        <label for="menu-toggle" class="menu-btn block md:hidden">
+          <svg class="w-8 h-8 text-purple-700" fill="none" stroke="currentColor" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">
+            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 6h16M4 12h16M4 18h16"></path>
+          </svg>
+        </label>
+        <input type="checkbox" id="menu-toggle" class="hidden" />
+        <nav class="space-x-6 md:flex md:space-x-6 md:static md:bg-transparent md:p-0 md:shadow-none">
+          <a href="#habilidades" class="text-gray-700 hover:text-purple-700">Habilidades</a>
+          <a href="#experiencia" class="text-gray-700 hover:text-purple-700">Experiencia</a>
+          <a href="#proyectos" class="text-gray-700 hover:text-purple-700">Proyectos</a>
+          <a href="#contacto" class="text-gray-700 hover:text-purple-700">Contacto</a>
+        </nav>
+      </div>
+    </header>
+
+    <!-- Hero -->
+    <section id="home" class="min-h-screen flex flex-col justify-center items-center px-6">
+      <h1 class="text-4xl md:text-6xl font-bold mb-4">I am Pedro</h1>
+      <div class="flex space-x-8 items-center">
+        <!-- Imagen clicable para copiar email -->
+        <img 
+          src="recursos/gmail.webp" 
+          class="w-10 h-10 rounded-full object-cover cursor-pointer"
+          title="Haz clic para copiar mi correo electrónico"
+          onclick="copyEmail()"
+        />
+        <!-- Iconos de enlaces -->
+        <a href="https://github.com/pedrocarramolino" target="_blank" class="text-gray-700 hover:text-blue-600" aria-label="GitHub">
+          <svg xmlns="http://www.w3.org/2000/svg" class="h-8 w-8" fill="currentColor" viewBox="0 0 24 24">
+            <path d="M12 0C5.372 0 0 5.373 0 12c0 5.303 3.438 9.8 8.205 11.387.6.111.82-.261.82-.577v-2.17c-3.338.726-4.033-1.61-4.033-1.61-.546-1.387-1.333-1.757-1.333-1.757-1.09-.745.083-.73.083-.73 1.205.085 1.84 1.237 1.84 1.237 1.07 1.834 2.809 1.304 3.495.997.108-.775.418-1.305.762-1.605-2.665-.304-5.467-1.333-5.467-5.933 0-1.31.468-2.38 1.236-3.22-.124-.303-.536-1.524.117-3.176 0 0 1.008-.323 3.301 1.23a11.52 11.52 0 013.003-.404c1.018.005 2.045.137 3.003.404 2.291-1.553 3.297-1.23 3.297-1.23.655 1.653.243 2.874.12 3.176.77.84 1.235 1.91 1.235 3.22 0 4.61-2.807 5.625-5.48 5.921.43.37.815 1.103.815 2.222v3.293c0 .319.216.694.825.576C20.565 21.796 24 17.3 24 12c0-6.627-5.373-12-12-12z"/>
+          </svg>
+        </a>
+        <a href="https://www.linkedin.com/in/pedro-carramolino/" target="_blank" class="text-gray-700 hover:text-blue-600" aria-label="LinkedIn">
+          <svg xmlns="http://www.w3.org/2000/svg" class="h-8 w-8" fill="currentColor" viewBox="0 0 24 24">
+            <path d="M20.447 20.452h-3.554v-5.569c0-1.328-.027-3.038-1.852-3.038-1.853 0-2.136 1.447-2.136 2.94v5.667h-3.553V9h3.414v1.561h.047c.476-.899 1.637-1.852 3.369-1.852 3.6 0 4.268 2.368 4.268 5.451v6.292zM5.337 7.433a2.064 2.064 0 11.001-4.128 2.064 2.064 0 01-.001 4.128zm1.777 13.019H3.56V9h3.554v11.452zM22.225 0H1.771C.792 0 0 .774 0 1.728v20.543C0 23.228.792 24 1.771 24h20.451c.98 0 1.778-.772 1.778-1.729V1.728C24 .774 23.204 0 22.225 0z"/>
+          </svg>
+        </a>
+      </div>
+    </section>
+
+    <script>
+      function copyEmail() {
+        const email = "pedrocarramolino34@gmail.com";
+        navigator.clipboard.writeText(email).then(() => {
+          alert("Correo copiado al portapapeles: " + email);
+        }).catch(() => {
+          alert("No se pudo copiar el correo, por favor copia manualmente: " + email);
+        });
+      }
+    </script>
+
+    <!-- Habilidades -->
+    <section id="habilidades" class="py-6 px-6">
+      <h2 class="text-3xl font-semibold mb-6 text-center">Habilidades</h2>
+      <br><br>
+      <div class="flex flex-wrap justify-center gap-10 text-lg">
+        <img src="recursos/html.webp" alt="HTML" class="w-20 h-20 skill-icon">
+        <img src="recursos/css.png" alt="CSS" class="w-20 h-20 skill-icon">
+        <img src="recursos/js.png" alt="JavaScript" class="w-20 h-20 skill-icon">
+        <img src="recursos/ts.png" alt="TypeScript" class="w-20 h-20 skill-icon">
+        <img src="recursos/java.webp" alt="Java" class="w-20 h-20 skill-icon">
+        <img src="recursos/sql.png" alt="SQL" class="w-20 h-20 skill-icon">
+        <img src="recursos/aws.png" alt="Amazon AWS" class="w-20 h-20 skill-icon">
+        <img src="recursos/React.webp" alt="React" class="w-20 h-20 skill-icon">
+        <img src="recursos/github.png" alt="GitHub" class="w-20 h-20 skill-icon">
+      </div>
+    </section>
+
+    <!-- Experiencia -->
+    <section id="experiencia" class="py-24 px-6">
+      <h2 class="text-3xl font-semibold mb-6 text-center">Experiencia</h2>
+      <br>
+      <div class="max-w-4xl mx-auto space-y-8 flex flex-col items-center">
+        <!-- Técnico de sistemas informáticos -->
+        <div class="bg-white p-8 rounded-xl shadow-md w-full mx-auto text-justify">
+          <h3 class="text-xl font-bold">Técnico de Sistemas Informáticos</h3>
+          <p class="text-gray-600 italic">Diciembre 2024 – Mayo 2025 | Apunts Informàtica i Telecomunicacions S.L., Guadassuar, Comunidad Valenciana</p>
+          <ul class="list-disc ml-5 mt-3 space-y-1">
+            <li>Soporte técnico de hardware y software para equipos informáticos.</li>
+            <li>Creación, clonación y restauración de imágenes de sistemas operativos.</li>
+            <li>Resolución de incidencias mediante herramientas de acceso remoto.</li>
+            <li>Mantenimiento preventivo y correctivo de equipos.</li>
+          </ul>
+        </div>
+
+        <!-- Desarrollo de diseño -->
+        <div class="bg-white p-8 rounded-xl shadow-md w-full mx-auto text-justify">
+          <h3 class="text-xl font-bold">Desarrollador de Diseño</h3>
+          <p class="text-gray-600 italic">Junio 2023 – Octubre 2024 | Geinfor, L'Alcúdia, Comunidad Valenciana</p>
+          <ul class="list-disc ml-5 mt-3 space-y-1">
+            <li>Implementación de nuevas pantallas en ERP propio utilizando herramientas internas.</li>
+            <li>Personalización de módulos según requerimientos del cliente.</li>
+            <li>Diseño y ajuste de informes personalizados.</li>
+            <li>Instalación y actualización del ERP en entornos cliente.</li>
+            <li>Resolución de incidencias técnicas del sistema ERP.</li>
+          </ul>
+        </div>
+
+        <!-- Cristalero -->
+        <div class="bg-white p-8 rounded-xl shadow-md w-full mx-auto text-justify">
+          <h3 class="text-xl font-bold">Cristalero</h3>
+          <p class="text-gray-600 italic">Enero 2021 – Noviembre 2022 | METALVIDRE 2011 SL, Alberic, Comunidad Valenciana</p>
+        </div>
+
+        <!-- Camarero -->
+        <div class="bg-white p-8 rounded-xl shadow-md w-full mx-auto text-justify">
+          <h3 class="text-xl font-bold">Camarero</h3>
+          <p class="text-gray-600 italic">Julio 2017 – Agosto 2020 | SALA REX CATERING SL, Alzira, Comunidad Valenciana</p>
+        </div>
+
+      </div>
+    </section>
+
+    <!-- Proyectos -->
+    <section id="proyectos" class="py-24 px-6">
+      <h2 class="text-3xl font-semibold mb-6 text-center">Proyectos</h2>
+      <br>
+      <div class="max-w-4xl mx-auto space-y-8 flex flex-col items-center">
+        <div class="bg-white shadow-md p-8 rounded-xl w-full w-full mx-auto text-justify">
+          <h3 class="text-xl font-bold mb-3">BookApp</h3>
+          <p class="mb-3">Aplicación Android para reservar libros en una biblioteca escolar o universitaria. Permite consultar los libros prestados y visualizar el tiempo restante para su devolución. Los datos se almacenan y gestionan en la nube utilizando Amazon AWS.</p>
+          <p class="text-sm text-gray-600 mb-3">Tecnologías: Android Studio, Java, XML, Amazon AWS</p>
+          <a href="https://github.com/pedrocarramolino/BookApp" target="_blank" class="text-blue-500 hover:underline">Ver en GitHub</a>
+        </div>
+      </div>
+    </section>
+
+    <!-- Footer -->
+    <footer class="text-gray-700 py-6 mt-12 shadow-inner">
+      <div class="max-w-4xl mx-auto flex justify-between items-center px-4">
+        <p class="text-sm">© 2025 Pedro Carramolino González</p>
+        <div class="flex gap-6">
+          <a href="https://github.com/pedrocarramolino" target="_blank" class="hover:text-blue-600" aria-label="GitHub">
+            <svg xmlns="http://www.w3.org/2000/svg" class="h-6 w-6" fill="currentColor" viewBox="0 0 24 24">
+              <path d="M12 0C5.372 0 0 5.373 0 12c0 5.303 3.438 9.8 8.205 11.387.6.111.82-.261.82-.577v-2.17c-3.338.726-4.033-1.61-4.033-1.61-.546-1.387-1.333-1.757-1.333-1.757-1.09-.745.083-.73.083-.73 1.205.085 1.84 1.237 1.84 1.237 1.07 1.834 2.809 1.304 3.495.997.108-.775.418-1.305.762-1.605-2.665-.304-5.467-1.333-5.467-5.933 0-1.31.468-2.38 1.236-3.22-.124-.303-.536-1.524.117-3.176 0 0 1.008-.323 3.301 1.23a11.52 11.52 0 013.003-.404c1.018.005 2.045.137 3.003.404 2.291-1.553 3.297-1.23 3.297-1.23.655 1.653.243 2.874.12 3.176.77.84 1.235 1.91 1.235 3.22 0 4.61-2.807 5.625-5.48 5.921.43.37.815 1.103.815 2.222v3.293c0 .319.216.694.825.576C20.565 21.796 24 17.3 24 12c0-6.627-5.373-12-12-12z"/>
+            </svg>
+          </a>
+          <a href="https://www.linkedin.com/in/pedro-carramolino/" target="_blank" class="hover:text-blue-600" aria-label="LinkedIn">
+            <svg xmlns="http://www.w3.org/2000/svg" class="h-6 w-6" fill="currentColor" viewBox="0 0 24 24">
+              <path d="M20.447 20.452h-3.554v-5.569c0-1.328-.027-3.038-1.852-3.038-1.853 0-2.136 1.447-2.136 2.94v5.667h-3.553V9h3.414v1.561h.047c.476-.899 1.637-1.852 3.369-1.852 3.6 0 4.268 2.368 4.268 5.451v6.292zM5.337 7.433a2.064 2.064 0 11.001-4.128 2.064 2.064 0 01-.001 4.128zm1.777 13.019H3.56V9h3.554v11.452zM22.225 0H1.771C.792 0 0 .774 0 1.728v20.543C0 23.228.792 24 1.771 24h20.451c.98 0 1.778-.772 1.778-1.729V1.728C24 .774 23.204 0 22.225 0z"/>
+            </svg>
+          </a>
+        </div>
+      </div>
+    </footer>
+  </body>
+</html>
