@@ -27,6 +27,14 @@
         <a href="#habilidades">Habilidades</a>
         <a href="#experiencia">Experiencia</a>
         <a href="#proyectos">Proyectos</a>
+        <button class="theme-toggle" id="themeToggle" aria-label="Cambiar tema">
+          <svg class="sun-icon" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24">
+            <circle cx="12" cy="12" r="5"/><path d="M12 1v2m0 18v2M4.22 4.22l1.42 1.42m12.72 12.72l1.42 1.42M1 12h2m18 0h2M4.22 19.78l1.42-1.42M18.36 5.64l1.42-1.42"/>
+          </svg>
+          <svg class="moon-icon" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24" style="display:none;">
+            <path d="M21 12.79A9 9 0 1111.21 3 7 7 0 0021 12.79z"/>
+          </svg>
+        </button>
       </nav>
     </div>
   </header>
@@ -159,13 +167,45 @@
   </div>
 
   <script>
+    // ── THEME TOGGLE ──
+    const themeToggle = document.getElementById('themeToggle');
+    const html = document.documentElement;
+    const sunIcon = themeToggle.querySelector('.sun-icon');
+    const moonIcon = themeToggle.querySelector('.moon-icon');
+    
+    const savedTheme = localStorage.getItem('theme') || 'dark';
+    html.setAttribute('data-theme', savedTheme);
+    updateThemeIcon(savedTheme);
+
+    themeToggle.addEventListener('click', () => {
+      const current = html.getAttribute('data-theme');
+      const next = current === 'dark' ? 'light' : 'dark';
+      html.setAttribute('data-theme', next);
+      localStorage.setItem('theme', next);
+      updateThemeIcon(next);
+    });
+
+    function updateThemeIcon(theme) {
+      if (theme === 'dark') {
+        sunIcon.style.display = 'none';
+        moonIcon.style.display = 'block';
+      } else {
+        sunIcon.style.display = 'block';
+        moonIcon.style.display = 'none';
+      }
+    }
+
     // ── CANVAS BACKGROUND ──
     const canvas = document.getElementById('bg-canvas');
     const ctx = canvas.getContext('2d');
     let W, H, particles, mouse = { x: null, y: null };
     const PARTICLE_COUNT = 80;
     const MAX_DIST = 140;
-    const PURPLE = '139,111,232';
+
+    function getParticleColor() {
+      const theme = html.getAttribute('data-theme');
+      return theme === 'dark' ? '139,111,232' : '107,92,231';
+    }
 
     function resize() {
       W = canvas.width = window.innerWidth;
@@ -184,6 +224,7 @@
 
     function draw() {
       ctx.clearRect(0, 0, W, H);
+      const PURPLE = getParticleColor();
 
       // líneas entre partículas cercanas
       for (let i = 0; i < particles.length; i++) {
