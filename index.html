@@ -10,6 +10,8 @@
 </head>
 <body>
 
+  <canvas id="bg-canvas"></canvas>
+
   <header>
     <div class="nav-inner">
       <a href="#home" class="nav-brand">
@@ -46,6 +48,10 @@
         <svg fill="currentColor" viewBox="0 0 24 24"><path d="M20.447 20.452h-3.554v-5.569c0-1.328-.027-3.038-1.852-3.038-1.853 0-2.136 1.447-2.136 2.94v5.667h-3.553V9h3.414v1.561h.047c.476-.899 1.637-1.852 3.369-1.852 3.6 0 4.268 2.368 4.268 5.451v6.292zM5.337 7.433a2.064 2.064 0 11.001-4.128 2.064 2.064 0 01-.001 4.128zm1.777 13.019H3.56V9h3.554v11.452zM22.225 0H1.771C.792 0 0 .774 0 1.728v20.543C0 23.228.792 24 1.771 24h20.451c.98 0 1.778-.772 1.778-1.729V1.728C24 .774 23.204 0 22.225 0z"/></svg>
         LinkedIn
       </a>
+    </div>
+    <div class="hero-scroll">
+      <span>scroll</span>
+      <div class="scroll-line"></div>
     </div>
   </section>
 
@@ -148,11 +154,95 @@
     </div>
   </footer>
 
-  <div id="toast" style="position:fixed;bottom:2rem;left:50%;transform:translateX(-50%) translateY(80px);background:#1a1a1a;color:#f9f8f6;padding:12px 24px;border-radius:100px;font-size:14px;opacity:0;transition:all 0.35s;z-index:999;pointer-events:none;">
+  <div id="toast" style="position:fixed;bottom:2rem;left:50%;transform:translateX(-50%) translateY(80px);background:#b79fff;color:#0e0e0f;padding:12px 24px;border-radius:100px;font-size:14px;font-weight:500;opacity:0;transition:all 0.35s;z-index:999;pointer-events:none;">
     ✉️ Correo copiado al portapapeles
   </div>
 
   <script>
+    // ── CANVAS BACKGROUND ──
+    const canvas = document.getElementById('bg-canvas');
+    const ctx = canvas.getContext('2d');
+    let W, H, particles, mouse = { x: null, y: null };
+    const PARTICLE_COUNT = 80;
+    const MAX_DIST = 140;
+    const PURPLE = '139,111,232';
+
+    function resize() {
+      W = canvas.width = window.innerWidth;
+      H = canvas.height = window.innerHeight;
+    }
+
+    function initParticles() {
+      particles = Array.from({ length: PARTICLE_COUNT }, () => ({
+        x: Math.random() * W,
+        y: Math.random() * H,
+        vx: (Math.random() - 0.5) * 0.4,
+        vy: (Math.random() - 0.5) * 0.4,
+        r: Math.random() * 1.5 + 0.5
+      }));
+    }
+
+    function draw() {
+      ctx.clearRect(0, 0, W, H);
+
+      // líneas entre partículas cercanas
+      for (let i = 0; i < particles.length; i++) {
+        for (let j = i + 1; j < particles.length; j++) {
+          const dx = particles[i].x - particles[j].x;
+          const dy = particles[i].y - particles[j].y;
+          const dist = Math.sqrt(dx * dx + dy * dy);
+          if (dist < MAX_DIST) {
+            const alpha = (1 - dist / MAX_DIST) * 0.18;
+            ctx.beginPath();
+            ctx.strokeStyle = `rgba(${PURPLE},${alpha})`;
+            ctx.lineWidth = 0.6;
+            ctx.moveTo(particles[i].x, particles[i].y);
+            ctx.lineTo(particles[j].x, particles[j].y);
+            ctx.stroke();
+          }
+        }
+        // línea hacia el ratón
+        if (mouse.x !== null) {
+          const dx = particles[i].x - mouse.x;
+          const dy = particles[i].y - mouse.y;
+          const dist = Math.sqrt(dx * dx + dy * dy);
+          if (dist < 180) {
+            const alpha = (1 - dist / 180) * 0.35;
+            ctx.beginPath();
+            ctx.strokeStyle = `rgba(${PURPLE},${alpha})`;
+            ctx.lineWidth = 0.8;
+            ctx.moveTo(particles[i].x, particles[i].y);
+            ctx.lineTo(mouse.x, mouse.y);
+            ctx.stroke();
+          }
+        }
+      }
+
+      // puntos
+      particles.forEach(p => {
+        ctx.beginPath();
+        ctx.arc(p.x, p.y, p.r, 0, Math.PI * 2);
+        ctx.fillStyle = `rgba(${PURPLE},0.5)`;
+        ctx.fill();
+
+        p.x += p.vx;
+        p.y += p.vy;
+        if (p.x < 0 || p.x > W) p.vx *= -1;
+        if (p.y < 0 || p.y > H) p.vy *= -1;
+      });
+
+      requestAnimationFrame(draw);
+    }
+
+    window.addEventListener('resize', () => { resize(); initParticles(); });
+    window.addEventListener('mousemove', e => { mouse.x = e.clientX; mouse.y = e.clientY; });
+    window.addEventListener('mouseleave', () => { mouse.x = null; mouse.y = null; });
+
+    resize();
+    initParticles();
+    draw();
+
+    // ── EMAIL ──
     function copyEmail() {
       navigator.clipboard.writeText("pedrocarramolino34@gmail.com").then(() => {
         const t = document.getElementById('toast');
@@ -161,14 +251,14 @@
       });
     }
 
-    // Mobile menu
+    // ── MOBILE MENU ──
     document.getElementById('menuBtn').addEventListener('click', () => {
       document.getElementById('mainNav').classList.toggle('open');
     });
 
-    // Scroll reveal
+    // ── SCROLL REVEAL ──
     const observer = new IntersectionObserver((entries) => {
-      entries.forEach((e, i) => {
+      entries.forEach(e => {
         if (e.isIntersecting) {
           setTimeout(() => e.target.classList.add('visible'), e.target.dataset.delay || 0);
         }
@@ -176,12 +266,10 @@
     }, { threshold: 0.12 });
 
     document.querySelectorAll('.skill-card').forEach((el, i) => {
-      el.dataset.delay = i * 60;
-      observer.observe(el);
+      el.dataset.delay = i * 60; observer.observe(el);
     });
     document.querySelectorAll('.timeline-item, .project-card').forEach((el, i) => {
-      el.dataset.delay = i * 100;
-      observer.observe(el);
+      el.dataset.delay = i * 100; observer.observe(el);
     });
   </script>
 </body>
