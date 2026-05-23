@@ -1,223 +1,473 @@
 <!DOCTYPE html>
 <html lang="es">
-  <head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <link rel="icon" type="image/png" href="recursos/IMG_5120.PNG">
-    <title>Portafolio Pedro</title>
-    <script src="https://cdn.tailwindcss.com"></script>
-    <style>
-      html {
-        scroll-padding-top: 80px; /* Altura del menú fijo */
-      }
-      body::before {
-        content: "";
-        position: fixed;
-        top: 0;
-        left: 0;
-        width: 100vw;
-        height: 100vh;
-        background: linear-gradient(to bottom right, #E6E6FA, #F8F8FF);
-        z-index: -1;
-        opacity: 0.4;
-      }
-      .skill-icon {
-        transition: transform 0.3s ease;
-      }
-      .skill-icon:hover {
-        transform: scale(1.2);
-      }
-      /* Movil */
-      #menu-toggle {
-        display: none;
-      }
-      #menu-toggle:checked + nav {
-        display: block;
-      }
-      @media (max-width: 768px) {
-        nav {
-          display: none;
-          flex-direction: column;
-          background-color: #E6E6FA;
-          position: absolute;
-          top: 60px;
-          right: 0;
-          width: 200px;
-          border-radius: 0 0 0 10px;
-          box-shadow: 0 4px 6px rgba(0,0,0,0.1);
-          padding: 10px 0;
-          z-index: 60;
-        }
-        nav a {
-          padding: 10px 20px;
-          display: block;
-          color: #4c1d95;
-        }
-        nav a:hover {
-          background-color: #c4b5fd;
-          color: #3b0764;
-        }
-        .menu-btn {
-          display: block;
-          cursor: pointer;
-        }
-      }
-    </style>
-  </head>
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <link rel="icon" type="image/png" href="recursos/IMG_5120.PNG">
+  <title>Pedro Carramolino — Portfolio</title>
+  <link href="https://fonts.googleapis.com/css2?family=DM+Sans:ital,wght@0,300;0,400;0,500;1,300&family=DM+Serif+Display:ital@0;1&display=swap" rel="stylesheet">
+  <style>
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
 
-  <body class="bg-purple-50 text-gray-900 font-sans">
-     <!-- Navbar -->
-    <header class="bg-purple-100 shadow fixed w-full z-50">
-      <div class="container mx-auto flex justify-between items-center p-4">
-        <div class="flex items-center space-x-4">
-          <img src="recursos/IMG_5120.PNG" alt="Pedro Carramolino" class="w-12 h-12 rounded-full object-cover object-top">
-          <a href="#home" class="font-bold text-lg">Pedro Carramolino</a>
-        </div>
+    :root {
+      --bg: #f9f8f6;
+      --surface: #ffffff;
+      --text: #1a1a1a;
+      --muted: #888880;
+      --accent: #2d2d2d;
+      --line: #e8e6e0;
+      --purple: #6b5ce7;
+      --purple-light: #f0eeff;
+    }
 
-        <!-- Botón menú hamburguesa -->
-        <label for="menu-toggle" class="menu-btn block md:hidden">
-          <svg class="w-8 h-8 text-purple-700" fill="none" stroke="currentColor" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">
-            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 6h16M4 12h16M4 18h16"></path>
-          </svg>
-        </label>
-        <input type="checkbox" id="menu-toggle" class="hidden" />
-        <nav class="space-x-6 md:flex md:space-x-6 md:static md:bg-transparent md:p-0 md:shadow-none">
-          <a href="#habilidades" class="text-gray-700 hover:text-purple-700">Habilidades</a>
-          <a href="#experiencia" class="text-gray-700 hover:text-purple-700">Experiencia</a>
-          <a href="#proyectos" class="text-gray-700 hover:text-purple-700">Proyectos</a>
-        </nav>
+    html { scroll-behavior: smooth; scroll-padding-top: 80px; }
+
+    body {
+      background: var(--bg);
+      color: var(--text);
+      font-family: 'DM Sans', sans-serif;
+      font-weight: 300;
+      line-height: 1.7;
+      overflow-x: hidden;
+    }
+
+    /* ── NAV ── */
+    header {
+      position: fixed; top: 0; width: 100%; z-index: 100;
+      padding: 0 2rem;
+      background: rgba(249,248,246,0.88);
+      backdrop-filter: blur(12px);
+      -webkit-backdrop-filter: blur(12px);
+      border-bottom: 1px solid var(--line);
+      transition: background 0.3s;
+    }
+    .nav-inner {
+      max-width: 900px; margin: 0 auto;
+      display: flex; align-items: center; justify-content: space-between;
+      height: 68px;
+    }
+    .nav-brand {
+      display: flex; align-items: center; gap: 12px;
+      text-decoration: none; color: var(--text);
+    }
+    .nav-brand img {
+      width: 36px; height: 36px; border-radius: 50%;
+      object-fit: cover; object-position: top;
+      border: 1.5px solid var(--line);
+    }
+    .nav-brand span { font-weight: 500; font-size: 15px; letter-spacing: -0.2px; }
+    nav { display: flex; gap: 2rem; }
+    nav a {
+      text-decoration: none; color: var(--muted);
+      font-size: 14px; letter-spacing: 0.3px;
+      transition: color 0.2s;
+      position: relative;
+    }
+    nav a::after {
+      content: ''; position: absolute; bottom: -2px; left: 0;
+      width: 0; height: 1px; background: var(--purple);
+      transition: width 0.25s ease;
+    }
+    nav a:hover { color: var(--text); }
+    nav a:hover::after { width: 100%; }
+
+    .menu-btn { display: none; background: none; border: none; cursor: pointer; }
+
+    /* ── HERO ── */
+    #home {
+      min-height: 100vh;
+      display: flex; flex-direction: column;
+      justify-content: center; align-items: flex-start;
+      padding: 100px 2rem 4rem;
+      max-width: 900px; margin: 0 auto;
+    }
+    .hero-eyebrow {
+      font-size: 13px; letter-spacing: 2px; text-transform: uppercase;
+      color: var(--muted); margin-bottom: 1.5rem;
+      opacity: 0; animation: fadeUp 0.7s 0.2s forwards;
+    }
+    .hero-title {
+      font-family: 'DM Serif Display', serif;
+      font-size: clamp(3.5rem, 8vw, 7rem);
+      line-height: 1.05; letter-spacing: -2px;
+      color: var(--text); margin-bottom: 1.5rem;
+      opacity: 0; animation: fadeUp 0.8s 0.35s forwards;
+    }
+    .hero-title em { font-style: italic; color: var(--purple); }
+    .hero-sub {
+      font-size: 1.1rem; color: var(--muted); max-width: 480px;
+      margin-bottom: 2.5rem;
+      opacity: 0; animation: fadeUp 0.8s 0.5s forwards;
+    }
+    .hero-links {
+      display: flex; gap: 1.2rem; align-items: center;
+      opacity: 0; animation: fadeUp 0.8s 0.65s forwards;
+    }
+    .hero-links a, .hero-links button {
+      display: flex; align-items: center; gap: 8px;
+      padding: 10px 20px;
+      border-radius: 100px;
+      font-size: 14px; font-family: 'DM Sans', sans-serif;
+      text-decoration: none; cursor: pointer;
+      transition: all 0.2s;
+    }
+    .btn-primary {
+      background: var(--text); color: var(--bg);
+      border: 1.5px solid var(--text);
+    }
+    .btn-primary:hover { background: var(--purple); border-color: var(--purple); transform: translateY(-1px); }
+    .btn-ghost {
+      background: transparent; color: var(--text);
+      border: 1.5px solid var(--line);
+    }
+    .btn-ghost:hover { border-color: var(--text); transform: translateY(-1px); }
+    .btn-ghost svg, .btn-primary svg { width: 18px; height: 18px; }
+
+    .hero-scroll {
+      position: absolute; bottom: 2rem; left: 50%;
+      transform: translateX(-50%);
+      display: flex; flex-direction: column; align-items: center; gap: 6px;
+      color: var(--muted); font-size: 12px; letter-spacing: 1px;
+      text-transform: uppercase;
+      opacity: 0; animation: fadeUp 0.8s 1s forwards;
+    }
+    .scroll-line {
+      width: 1px; height: 40px; background: var(--line);
+      animation: scrollPulse 2s 1.5s infinite;
+    }
+
+    /* ── SECTIONS ── */
+    section { padding: 7rem 2rem; }
+    .section-inner { max-width: 900px; margin: 0 auto; }
+    .section-label {
+      font-size: 12px; letter-spacing: 2.5px; text-transform: uppercase;
+      color: var(--purple); margin-bottom: 1rem; font-weight: 500;
+    }
+    .section-title {
+      font-family: 'DM Serif Display', serif;
+      font-size: clamp(2rem, 4vw, 3rem);
+      letter-spacing: -1px; margin-bottom: 4rem;
+      line-height: 1.1;
+    }
+
+    /* ── SKILLS ── */
+    #habilidades { background: var(--surface); border-top: 1px solid var(--line); border-bottom: 1px solid var(--line); }
+    .skills-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fill, minmax(90px, 1fr));
+      gap: 1.5rem;
+    }
+    .skill-card {
+      display: flex; flex-direction: column; align-items: center; gap: 10px;
+      padding: 1.25rem 0.75rem;
+      border: 1px solid var(--line); border-radius: 12px;
+      background: var(--bg);
+      transition: all 0.25s;
+      opacity: 0; transform: translateY(20px);
+    }
+    .skill-card.visible { opacity: 1; transform: translateY(0); }
+    .skill-card:hover {
+      border-color: var(--purple);
+      transform: translateY(-4px);
+      box-shadow: 0 8px 24px rgba(107,92,231,0.08);
+    }
+    .skill-card img { width: 40px; height: 40px; object-fit: contain; }
+    .skill-card span { font-size: 11px; color: var(--muted); text-align: center; letter-spacing: 0.3px; }
+
+    /* ── EXPERIENCE (timeline) ── */
+    .timeline { position: relative; padding-left: 2rem; }
+    .timeline::before {
+      content: ''; position: absolute;
+      left: 0; top: 6px; bottom: 0;
+      width: 1px; background: var(--line);
+    }
+    .timeline-item {
+      position: relative; margin-bottom: 3.5rem;
+      opacity: 0; transform: translateX(-16px);
+      transition: all 0.5s;
+    }
+    .timeline-item.visible { opacity: 1; transform: translateX(0); }
+    .timeline-dot {
+      position: absolute; left: -2.4rem; top: 6px;
+      width: 10px; height: 10px; border-radius: 50%;
+      background: var(--bg); border: 1.5px solid var(--muted);
+      transition: border-color 0.3s, background 0.3s;
+    }
+    .timeline-item:hover .timeline-dot {
+      border-color: var(--purple); background: var(--purple);
+    }
+    .timeline-date {
+      font-size: 12px; color: var(--muted); letter-spacing: 0.5px;
+      margin-bottom: 4px; text-transform: uppercase;
+    }
+    .timeline-role {
+      font-size: 1.1rem; font-weight: 500; margin-bottom: 2px;
+      letter-spacing: -0.3px;
+    }
+    .timeline-company {
+      font-size: 14px; color: var(--muted); margin-bottom: 12px;
+    }
+    .timeline-list {
+      list-style: none; display: flex; flex-direction: column; gap: 6px;
+    }
+    .timeline-list li {
+      font-size: 14px; color: var(--muted); padding-left: 16px; position: relative;
+    }
+    .timeline-list li::before {
+      content: '–'; position: absolute; left: 0; color: var(--purple);
+    }
+
+    /* ── PROJECTS ── */
+    #proyectos { background: var(--surface); border-top: 1px solid var(--line); }
+    .project-card {
+      border: 1px solid var(--line); border-radius: 16px;
+      padding: 2.5rem; background: var(--bg);
+      transition: all 0.3s;
+      opacity: 0; transform: translateY(20px);
+    }
+    .project-card.visible { opacity: 1; transform: translateY(0); }
+    .project-card:hover {
+      border-color: var(--purple);
+      box-shadow: 0 12px 40px rgba(107,92,231,0.07);
+      transform: translateY(-4px);
+    }
+    .project-tags {
+      display: flex; flex-wrap: wrap; gap: 8px; margin-bottom: 1.25rem;
+    }
+    .tag {
+      font-size: 11px; padding: 4px 12px; border-radius: 100px;
+      background: var(--purple-light); color: var(--purple);
+      letter-spacing: 0.3px; font-weight: 500;
+    }
+    .project-title {
+      font-family: 'DM Serif Display', serif;
+      font-size: 1.6rem; letter-spacing: -0.5px; margin-bottom: 0.75rem;
+    }
+    .project-desc { font-size: 15px; color: var(--muted); margin-bottom: 1.5rem; line-height: 1.8; }
+    .project-link {
+      display: inline-flex; align-items: center; gap: 6px;
+      font-size: 14px; color: var(--text); text-decoration: none;
+      border-bottom: 1px solid var(--text); padding-bottom: 1px;
+      transition: color 0.2s, border-color 0.2s;
+    }
+    .project-link:hover { color: var(--purple); border-color: var(--purple); }
+    .project-link svg { width: 14px; height: 14px; }
+
+    /* ── FOOTER ── */
+    footer {
+      padding: 2.5rem 2rem;
+      border-top: 1px solid var(--line);
+    }
+    .footer-inner {
+      max-width: 900px; margin: 0 auto;
+      display: flex; justify-content: space-between; align-items: center;
+    }
+    footer p { font-size: 13px; color: var(--muted); }
+    .footer-links { display: flex; gap: 1.25rem; }
+    .footer-links a {
+      color: var(--muted); transition: color 0.2s;
+    }
+    .footer-links a:hover { color: var(--text); }
+    .footer-links svg { width: 20px; height: 20px; }
+
+    /* ── ANIMATIONS ── */
+    @keyframes fadeUp {
+      from { opacity: 0; transform: translateY(24px); }
+      to   { opacity: 1; transform: translateY(0); }
+    }
+    @keyframes scrollPulse {
+      0%, 100% { opacity: 0.3; transform: scaleY(1); }
+      50% { opacity: 1; transform: scaleY(1.2); }
+    }
+
+    /* ── MOBILE ── */
+    @media (max-width: 640px) {
+      .menu-btn { display: block; }
+      nav { display: none; flex-direction: column; position: absolute; top: 68px; right: 0; left: 0; background: var(--bg); border-bottom: 1px solid var(--line); padding: 1rem 2rem; gap: 1rem; }
+      nav.open { display: flex; }
+      .footer-inner { flex-direction: column; gap: 1rem; text-align: center; }
+    }
+  </style>
+</head>
+<body>
+
+  <header>
+    <div class="nav-inner">
+      <a href="#home" class="nav-brand">
+        <img src="recursos/IMG_5120.PNG" alt="Pedro Carramolino">
+        <span>Pedro Carramolino</span>
+      </a>
+      <button class="menu-btn" id="menuBtn" aria-label="Abrir menú">
+        <svg width="22" height="22" fill="none" stroke="currentColor" stroke-width="1.8" viewBox="0 0 24 24">
+          <path stroke-linecap="round" d="M4 6h16M4 12h16M4 18h16"/>
+        </svg>
+      </button>
+      <nav id="mainNav">
+        <a href="#habilidades">Habilidades</a>
+        <a href="#experiencia">Experiencia</a>
+        <a href="#proyectos">Proyectos</a>
+      </nav>
+    </div>
+  </header>
+
+  <section id="home" style="position:relative;">
+    <div class="hero-eyebrow">Desarrollador & Técnico de Sistemas</div>
+    <h1 class="hero-title">Hola, soy<br><em>Pedro.</em></h1>
+    <p class="hero-sub">Construyo interfaces y soluciones digitales con atención al detalle y pasión por la tecnología.</p>
+    <div class="hero-links">
+      <button class="btn-primary" onclick="copyEmail()">
+        <svg fill="none" stroke="currentColor" stroke-width="1.8" viewBox="0 0 24 24"><path stroke-linecap="round" d="M3 8l7.89 5.26a2 2 0 002.22 0L21 8M5 19h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v10a2 2 0 002 2z"/></svg>
+        Contactar
+      </button>
+      <a href="https://github.com/pedrocarramolino" target="_blank" class="btn-ghost">
+        <svg fill="currentColor" viewBox="0 0 24 24"><path d="M12 0C5.372 0 0 5.373 0 12c0 5.303 3.438 9.8 8.205 11.387.6.111.82-.261.82-.577v-2.17c-3.338.726-4.033-1.61-4.033-1.61-.546-1.387-1.333-1.757-1.333-1.757-1.09-.745.083-.73.083-.73 1.205.085 1.84 1.237 1.84 1.237 1.07 1.834 2.809 1.304 3.495.997.108-.775.418-1.305.762-1.605-2.665-.304-5.467-1.333-5.467-5.933 0-1.31.468-2.38 1.236-3.22-.124-.303-.536-1.524.117-3.176 0 0 1.008-.323 3.301 1.23a11.52 11.52 0 013.003-.404c1.018.005 2.045.137 3.003.404 2.291-1.553 3.297-1.23 3.297-1.23.655 1.653.243 2.874.12 3.176.77.84 1.235 1.91 1.235 3.22 0 4.61-2.807 5.625-5.48 5.921.43.37.815 1.103.815 2.222v3.293c0 .319.216.694.825.576C20.565 21.796 24 17.3 24 12c0-6.627-5.373-12-12-12z"/></svg>
+        GitHub
+      </a>
+      <a href="https://www.linkedin.com/in/pedro-carramolino/" target="_blank" class="btn-ghost">
+        <svg fill="currentColor" viewBox="0 0 24 24"><path d="M20.447 20.452h-3.554v-5.569c0-1.328-.027-3.038-1.852-3.038-1.853 0-2.136 1.447-2.136 2.94v5.667h-3.553V9h3.414v1.561h.047c.476-.899 1.637-1.852 3.369-1.852 3.6 0 4.268 2.368 4.268 5.451v6.292zM5.337 7.433a2.064 2.064 0 11.001-4.128 2.064 2.064 0 01-.001 4.128zm1.777 13.019H3.56V9h3.554v11.452zM22.225 0H1.771C.792 0 0 .774 0 1.728v20.543C0 23.228.792 24 1.771 24h20.451c.98 0 1.778-.772 1.778-1.729V1.728C24 .774 23.204 0 22.225 0z"/></svg>
+        LinkedIn
+      </a>
+    </div>
+    <div class="hero-scroll">
+      <span>scroll</span>
+      <div class="scroll-line"></div>
+    </div>
+  </section>
+
+  <section id="habilidades">
+    <div class="section-inner">
+      <div class="section-label">Stack</div>
+      <h2 class="section-title">Habilidades</h2>
+      <div class="skills-grid">
+        <div class="skill-card"><img src="recursos/html.webp" alt="HTML"><span>HTML</span></div>
+        <div class="skill-card"><img src="recursos/css.png" alt="CSS"><span>CSS</span></div>
+        <div class="skill-card"><img src="recursos/js.png" alt="JavaScript"><span>JavaScript</span></div>
+        <div class="skill-card"><img src="recursos/ts.png" alt="TypeScript"><span>TypeScript</span></div>
+        <div class="skill-card"><img src="recursos/java.webp" alt="Java"><span>Java</span></div>
+        <div class="skill-card"><img src="recursos/sql.png" alt="SQL"><span>SQL</span></div>
+        <div class="skill-card"><img src="recursos/aws.png" alt="AWS"><span>AWS</span></div>
+        <div class="skill-card"><img src="recursos/React.webp" alt="React"><span>React</span></div>
+        <div class="skill-card"><img src="recursos/github.png" alt="GitHub"><span>GitHub</span></div>
       </div>
-    </header>
+    </div>
+  </section>
 
-    <!-- Hero -->
-    <section id="home" class="min-h-screen flex flex-col justify-center items-center px-6">
-      <h1 class="text-4xl md:text-6xl font-bold mb-4">I am Pedro</h1>
-      <div class="flex space-x-8 items-center">
-        <!-- Imagen clicable para copiar email -->
-        <img 
-          src="recursos/gmail.webp" 
-          class="w-10 h-10 rounded-full object-cover cursor-pointer"
-          title="Haz clic para copiar mi correo electrónico"
-          onclick="copyEmail()"
-        />
-        <!-- Iconos de enlaces -->
-        <a href="https://github.com/pedrocarramolino" target="_blank" class="text-gray-700 hover:text-blue-600" aria-label="GitHub">
-          <svg xmlns="http://www.w3.org/2000/svg" class="h-8 w-8" fill="currentColor" viewBox="0 0 24 24">
-            <path d="M12 0C5.372 0 0 5.373 0 12c0 5.303 3.438 9.8 8.205 11.387.6.111.82-.261.82-.577v-2.17c-3.338.726-4.033-1.61-4.033-1.61-.546-1.387-1.333-1.757-1.333-1.757-1.09-.745.083-.73.083-.73 1.205.085 1.84 1.237 1.84 1.237 1.07 1.834 2.809 1.304 3.495.997.108-.775.418-1.305.762-1.605-2.665-.304-5.467-1.333-5.467-5.933 0-1.31.468-2.38 1.236-3.22-.124-.303-.536-1.524.117-3.176 0 0 1.008-.323 3.301 1.23a11.52 11.52 0 013.003-.404c1.018.005 2.045.137 3.003.404 2.291-1.553 3.297-1.23 3.297-1.23.655 1.653.243 2.874.12 3.176.77.84 1.235 1.91 1.235 3.22 0 4.61-2.807 5.625-5.48 5.921.43.37.815 1.103.815 2.222v3.293c0 .319.216.694.825.576C20.565 21.796 24 17.3 24 12c0-6.627-5.373-12-12-12z"/>
-          </svg>
-        </a>
-        <a href="https://www.linkedin.com/in/pedro-carramolino/" target="_blank" class="text-gray-700 hover:text-blue-600" aria-label="LinkedIn">
-          <svg xmlns="http://www.w3.org/2000/svg" class="h-8 w-8" fill="currentColor" viewBox="0 0 24 24">
-            <path d="M20.447 20.452h-3.554v-5.569c0-1.328-.027-3.038-1.852-3.038-1.853 0-2.136 1.447-2.136 2.94v5.667h-3.553V9h3.414v1.561h.047c.476-.899 1.637-1.852 3.369-1.852 3.6 0 4.268 2.368 4.268 5.451v6.292zM5.337 7.433a2.064 2.064 0 11.001-4.128 2.064 2.064 0 01-.001 4.128zm1.777 13.019H3.56V9h3.554v11.452zM22.225 0H1.771C.792 0 0 .774 0 1.728v20.543C0 23.228.792 24 1.771 24h20.451c.98 0 1.778-.772 1.778-1.729V1.728C24 .774 23.204 0 22.225 0z"/>
-          </svg>
-        </a>
-      </div>
-    </section>
-
-    <script>
-      function copyEmail() {
-        const email = "pedrocarramolino34@gmail.com";
-        navigator.clipboard.writeText(email).then(() => {
-          alert("Correo copiado al portapapeles: " + email);
-        }).catch(() => {
-          alert("No se pudo copiar el correo, por favor copia manualmente: " + email);
-        });
-      }
-    </script>
-
-    <!-- Habilidades -->
-    <section id="habilidades" class="py-6 px-6">
-      <h2 class="text-3xl font-semibold mb-6 text-center">Habilidades</h2>
-      <br><br>
-      <div class="flex flex-wrap justify-center gap-10 text-lg">
-        <img src="recursos/html.webp" alt="HTML" class="w-20 h-20 skill-icon">
-        <img src="recursos/css.png" alt="CSS" class="w-20 h-20 skill-icon">
-        <img src="recursos/js.png" alt="JavaScript" class="w-20 h-20 skill-icon">
-        <img src="recursos/ts.png" alt="TypeScript" class="w-20 h-20 skill-icon">
-        <img src="recursos/java.webp" alt="Java" class="w-20 h-20 skill-icon">
-        <img src="recursos/sql.png" alt="SQL" class="w-20 h-20 skill-icon">
-        <img src="recursos/aws.png" alt="Amazon AWS" class="w-20 h-20 skill-icon">
-        <img src="recursos/React.webp" alt="React" class="w-20 h-20 skill-icon">
-        <img src="recursos/github.png" alt="GitHub" class="w-20 h-20 skill-icon">
-      </div>
-    </section>
-
-    <!-- Experiencia -->
-    <section id="experiencia" class="py-24 px-6">
-      <h2 class="text-3xl font-semibold mb-6 text-center">Experiencia</h2>
-      <br>
-      <div class="max-w-4xl mx-auto space-y-8 flex flex-col items-center">
-        <!-- Técnico de sistemas informáticos -->
-        <div class="bg-white p-8 rounded-xl shadow-md w-full mx-auto text-justify">
-          <h3 class="text-xl font-bold">Técnico de Sistemas Informáticos</h3>
-          <p class="text-gray-600 italic">Diciembre 2024 – Mayo 2025 | Apunts Informàtica i Telecomunicacions S.L., Guadassuar, Comunidad Valenciana</p>
-          <ul class="list-disc ml-5 mt-3 space-y-1">
+  <section id="experiencia">
+    <div class="section-inner">
+      <div class="section-label">Trayectoria</div>
+      <h2 class="section-title">Experiencia</h2>
+      <div class="timeline">
+        <div class="timeline-item">
+          <div class="timeline-dot"></div>
+          <div class="timeline-date">Dic 2024 – May 2025</div>
+          <div class="timeline-role">Técnico de Sistemas Informáticos</div>
+          <div class="timeline-company">Apunts Informàtica i Telecomunicacions S.L. · Guadassuar, Valencia</div>
+          <ul class="timeline-list">
             <li>Soporte técnico de hardware y software para equipos informáticos.</li>
             <li>Creación, clonación y restauración de imágenes de sistemas operativos.</li>
             <li>Resolución de incidencias mediante herramientas de acceso remoto.</li>
             <li>Mantenimiento preventivo y correctivo de equipos.</li>
           </ul>
         </div>
-
-        <!-- Desarrollo de diseño -->
-        <div class="bg-white p-8 rounded-xl shadow-md w-full mx-auto text-justify">
-          <h3 class="text-xl font-bold">Desarrollador de Diseño</h3>
-          <p class="text-gray-600 italic">Junio 2023 – Octubre 2024 | Geinfor, L'Alcúdia, Comunidad Valenciana</p>
-          <ul class="list-disc ml-5 mt-3 space-y-1">
-            <li>Implementación de nuevas pantallas en ERP propio utilizando herramientas internas.</li>
+        <div class="timeline-item">
+          <div class="timeline-dot"></div>
+          <div class="timeline-date">Jun 2023 – Oct 2024</div>
+          <div class="timeline-role">Desarrollador de Diseño</div>
+          <div class="timeline-company">Geinfor · L'Alcúdia, Valencia</div>
+          <ul class="timeline-list">
+            <li>Implementación de nuevas pantallas en ERP propio.</li>
             <li>Personalización de módulos según requerimientos del cliente.</li>
             <li>Diseño y ajuste de informes personalizados.</li>
             <li>Instalación y actualización del ERP en entornos cliente.</li>
             <li>Resolución de incidencias técnicas del sistema ERP.</li>
           </ul>
         </div>
-
-        <!-- Cristalero -->
-        <div class="bg-white p-8 rounded-xl shadow-md w-full mx-auto text-justify">
-          <h3 class="text-xl font-bold">Cristalero</h3>
-          <p class="text-gray-600 italic">Enero 2021 – Noviembre 2022 | METALVIDRE 2011 SL, Alberic, Comunidad Valenciana</p>
+        <div class="timeline-item">
+          <div class="timeline-dot"></div>
+          <div class="timeline-date">Ene 2021 – Nov 2022</div>
+          <div class="timeline-role">Cristalero</div>
+          <div class="timeline-company">METALVIDRE 2011 SL · Alberic, Valencia</div>
         </div>
-
-        <!-- Camarero -->
-        <div class="bg-white p-8 rounded-xl shadow-md w-full mx-auto text-justify">
-          <h3 class="text-xl font-bold">Camarero</h3>
-          <p class="text-gray-600 italic">Julio 2017 – Agosto 2020 | SALA REX CATERING SL, Alzira, Comunidad Valenciana</p>
-        </div>
-
-      </div>
-    </section>
-
-    <!-- Proyectos -->
-    <section id="proyectos" class="py-24 px-6">
-      <h2 class="text-3xl font-semibold mb-6 text-center">Proyectos</h2>
-      <br>
-      <div class="max-w-4xl mx-auto space-y-8 flex flex-col items-center">
-        <div class="bg-white shadow-md p-8 rounded-xl w-full w-full mx-auto text-justify">
-          <h3 class="text-xl font-bold mb-3">BookApp</h3>
-          <p class="mb-3">Aplicación Android para reservar libros en una biblioteca escolar o universitaria. Permite consultar los libros prestados y visualizar el tiempo restante para su devolución. Los datos se almacenan y gestionan en la nube utilizando Amazon AWS.</p>
-          <p class="text-sm text-gray-600 mb-3">Tecnologías: Android Studio, Java, XML, Amazon AWS</p>
-          <a href="https://github.com/pedrocarramolino/BookApp" target="_blank" class="text-blue-500 hover:underline">Ver en GitHub</a>
+        <div class="timeline-item">
+          <div class="timeline-dot"></div>
+          <div class="timeline-date">Jul 2017 – Ago 2020</div>
+          <div class="timeline-role">Camarero</div>
+          <div class="timeline-company">SALA REX CATERING SL · Alzira, Valencia</div>
         </div>
       </div>
-    </section>
+    </div>
+  </section>
 
-    <!-- Footer -->
-    <footer class="text-gray-700 py-6 mt-12 shadow-inner">
-      <div class="max-w-4xl mx-auto flex justify-between items-center px-4">
-        <p class="text-sm">© 2025 Pedro Carramolino González</p>
-        <div class="flex gap-6">
-          <a href="https://github.com/pedrocarramolino" target="_blank" class="hover:text-blue-600" aria-label="GitHub">
-            <svg xmlns="http://www.w3.org/2000/svg" class="h-6 w-6" fill="currentColor" viewBox="0 0 24 24">
-              <path d="M12 0C5.372 0 0 5.373 0 12c0 5.303 3.438 9.8 8.205 11.387.6.111.82-.261.82-.577v-2.17c-3.338.726-4.033-1.61-4.033-1.61-.546-1.387-1.333-1.757-1.333-1.757-1.09-.745.083-.73.083-.73 1.205.085 1.84 1.237 1.84 1.237 1.07 1.834 2.809 1.304 3.495.997.108-.775.418-1.305.762-1.605-2.665-.304-5.467-1.333-5.467-5.933 0-1.31.468-2.38 1.236-3.22-.124-.303-.536-1.524.117-3.176 0 0 1.008-.323 3.301 1.23a11.52 11.52 0 013.003-.404c1.018.005 2.045.137 3.003.404 2.291-1.553 3.297-1.23 3.297-1.23.655 1.653.243 2.874.12 3.176.77.84 1.235 1.91 1.235 3.22 0 4.61-2.807 5.625-5.48 5.921.43.37.815 1.103.815 2.222v3.293c0 .319.216.694.825.576C20.565 21.796 24 17.3 24 12c0-6.627-5.373-12-12-12z"/>
-            </svg>
-          </a>
-          <a href="https://www.linkedin.com/in/pedro-carramolino/" target="_blank" class="hover:text-blue-600" aria-label="LinkedIn">
-            <svg xmlns="http://www.w3.org/2000/svg" class="h-6 w-6" fill="currentColor" viewBox="0 0 24 24">
-              <path d="M20.447 20.452h-3.554v-5.569c0-1.328-.027-3.038-1.852-3.038-1.853 0-2.136 1.447-2.136 2.94v5.667h-3.553V9h3.414v1.561h.047c.476-.899 1.637-1.852 3.369-1.852 3.6 0 4.268 2.368 4.268 5.451v6.292zM5.337 7.433a2.064 2.064 0 11.001-4.128 2.064 2.064 0 01-.001 4.128zm1.777 13.019H3.56V9h3.554v11.452zM22.225 0H1.771C.792 0 0 .774 0 1.728v20.543C0 23.228.792 24 1.771 24h20.451c.98 0 1.778-.772 1.778-1.729V1.728C24 .774 23.204 0 22.225 0z"/>
-            </svg>
-          </a>
+  <section id="proyectos">
+    <div class="section-inner">
+      <div class="section-label">Trabajo</div>
+      <h2 class="section-title">Proyectos</h2>
+      <div class="project-card">
+        <div class="project-tags">
+          <span class="tag">Android Studio</span>
+          <span class="tag">Java</span>
+          <span class="tag">XML</span>
+          <span class="tag">Amazon AWS</span>
         </div>
+        <div class="project-title">BookApp</div>
+        <p class="project-desc">Aplicación Android para reservar libros en una biblioteca escolar o universitaria. Permite consultar los libros prestados y visualizar el tiempo restante para su devolución. Los datos se almacenan y gestionan en la nube utilizando Amazon AWS.</p>
+        <a href="https://github.com/pedrocarramolino/BookApp" target="_blank" class="project-link">
+          Ver en GitHub
+          <svg fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path stroke-linecap="round" d="M17 8l4 4m0 0l-4 4m4-4H3"/></svg>
+        </a>
       </div>
-    </footer>
-  </body>
+    </div>
+  </section>
+
+  <footer>
+    <div class="footer-inner">
+      <p>© 2025 Pedro Carramolino González</p>
+      <div class="footer-links">
+        <a href="https://github.com/pedrocarramolino" target="_blank" aria-label="GitHub">
+          <svg fill="currentColor" viewBox="0 0 24 24"><path d="M12 0C5.372 0 0 5.373 0 12c0 5.303 3.438 9.8 8.205 11.387.6.111.82-.261.82-.577v-2.17c-3.338.726-4.033-1.61-4.033-1.61-.546-1.387-1.333-1.757-1.333-1.757-1.09-.745.083-.73.083-.73 1.205.085 1.84 1.237 1.84 1.237 1.07 1.834 2.809 1.304 3.495.997.108-.775.418-1.305.762-1.605-2.665-.304-5.467-1.333-5.467-5.933 0-1.31.468-2.38 1.236-3.22-.124-.303-.536-1.524.117-3.176 0 0 1.008-.323 3.301 1.23a11.52 11.52 0 013.003-.404c1.018.005 2.045.137 3.003.404 2.291-1.553 3.297-1.23 3.297-1.23.655 1.653.243 2.874.12 3.176.77.84 1.235 1.91 1.235 3.22 0 4.61-2.807 5.625-5.48 5.921.43.37.815 1.103.815 2.222v3.293c0 .319.216.694.825.576C20.565 21.796 24 17.3 24 12c0-6.627-5.373-12-12-12z"/></svg>
+        </a>
+        <a href="https://www.linkedin.com/in/pedro-carramolino/" target="_blank" aria-label="LinkedIn">
+          <svg fill="currentColor" viewBox="0 0 24 24"><path d="M20.447 20.452h-3.554v-5.569c0-1.328-.027-3.038-1.852-3.038-1.853 0-2.136 1.447-2.136 2.94v5.667h-3.553V9h3.414v1.561h.047c.476-.899 1.637-1.852 3.369-1.852 3.6 0 4.268 2.368 4.268 5.451v6.292zM5.337 7.433a2.064 2.064 0 11.001-4.128 2.064 2.064 0 01-.001 4.128zm1.777 13.019H3.56V9h3.554v11.452zM22.225 0H1.771C.792 0 0 .774 0 1.728v20.543C0 23.228.792 24 1.771 24h20.451c.98 0 1.778-.772 1.778-1.729V1.728C24 .774 23.204 0 22.225 0z"/></svg>
+        </a>
+      </div>
+    </div>
+  </footer>
+
+  <div id="toast" style="position:fixed;bottom:2rem;left:50%;transform:translateX(-50%) translateY(80px);background:#1a1a1a;color:#f9f8f6;padding:12px 24px;border-radius:100px;font-size:14px;opacity:0;transition:all 0.35s;z-index:999;pointer-events:none;">
+    ✉️ Correo copiado al portapapeles
+  </div>
+
+  <script>
+    function copyEmail() {
+      navigator.clipboard.writeText("pedrocarramolino34@gmail.com").then(() => {
+        const t = document.getElementById('toast');
+        t.style.opacity = '1'; t.style.transform = 'translateX(-50%) translateY(0)';
+        setTimeout(() => { t.style.opacity = '0'; t.style.transform = 'translateX(-50%) translateY(80px)'; }, 2500);
+      });
+    }
+
+    // Mobile menu
+    document.getElementById('menuBtn').addEventListener('click', () => {
+      document.getElementById('mainNav').classList.toggle('open');
+    });
+
+    // Scroll reveal
+    const observer = new IntersectionObserver((entries) => {
+      entries.forEach((e, i) => {
+        if (e.isIntersecting) {
+          setTimeout(() => e.target.classList.add('visible'), e.target.dataset.delay || 0);
+        }
+      });
+    }, { threshold: 0.12 });
+
+    document.querySelectorAll('.skill-card').forEach((el, i) => {
+      el.dataset.delay = i * 60;
+      observer.observe(el);
+    });
+    document.querySelectorAll('.timeline-item, .project-card').forEach((el, i) => {
+      el.dataset.delay = i * 100;
+      observer.observe(el);
+    });
+  </script>
+</body>
 </html>
