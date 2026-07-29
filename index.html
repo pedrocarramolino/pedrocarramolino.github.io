@@ -4,7 +4,12 @@
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <link rel="icon" type="image/png" href="recursos/favicon.png">
-  <title>Pedro Carramolino — Portfolio</title>
+  <title>Pedro Carramolino — Desarrollador & Técnico de Sistemas</title>
+  <meta name="description" content="Portfolio de Pedro Carramolino: desarrollo web y de aplicaciones (Next.js, Flutter, Firebase, AWS) y soporte técnico de sistemas.">
+  <meta name="theme-color" content="#0e0e0f">
+  <meta property="og:title" content="Pedro Carramolino — Desarrollador & Técnico de Sistemas">
+  <meta property="og:description" content="Portfolio de Pedro Carramolino: desarrollo web y de aplicaciones (Next.js, Flutter, Firebase, AWS) y soporte técnico de sistemas.">
+  <meta property="og:type" content="website">
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=DM+Sans:ital,wght@0,300;0,400;0,500;1,300&family=DM+Serif+Display:ital@0;1&display=swap" rel="stylesheet">
@@ -46,7 +51,7 @@
   <section id="home" tabindex="-1">
     <div class="hero-eyebrow">Desarrollador & Técnico de Sistemas</div>
     <h1 class="hero-title">Hola, soy<br><em>Pedro.</em></h1>
-    <p class="hero-sub">Construyo interfaces y soluciones digitales con atención al detalle y pasión por la tecnología.</p>
+    <p class="hero-sub">Diseño y desarrollo aplicaciones web y móviles, desde la interfaz hasta la infraestructura que las sostiene.</p>
     <div class="hero-links">
       <button class="btn-primary" onclick="copyEmail()">
         <svg fill="none" stroke="currentColor" stroke-width="1.8" viewBox="0 0 24 24"><path stroke-linecap="round" d="M3 8l7.89 5.26a2 2 0 002.22 0L21 8M5 19h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v10a2 2 0 002 2z"/></svg>
@@ -132,7 +137,7 @@
 
   <section id="proyectos">
     <div class="section-inner">
-      <div class="section-label">Trabajo</div>
+      <div class="section-label">Portfolio</div>
       <h2 class="section-title">Proyectos</h2>
       <div class="projects-grid">
         <div class="project-card">
@@ -183,7 +188,7 @@
 
   <footer>
     <div class="footer-inner">
-      <p>© 2025 Pedro Carramolino González</p>
+      <p>© <span id="year"></span> Pedro Carramolino González</p>
       <div class="footer-links">
         <a href="https://github.com/pedrocarramolino" target="_blank" rel="noopener noreferrer" aria-label="GitHub">
           <svg fill="currentColor" viewBox="0 0 24 24"><path d="M12 0C5.372 0 0 5.373 0 12c0 5.303 3.438 9.8 8.205 11.387.6.111.82-.261.82-.577v-2.17c-3.338.726-4.033-1.61-4.033-1.61-.546-1.387-1.333-1.757-1.333-1.757-1.09-.745.083-.73.083-.73 1.205.085 1.84 1.237 1.84 1.237 1.07 1.834 2.809 1.304 3.495.997.108-.775.418-1.305.762-1.605-2.665-.304-5.467-1.333-5.467-5.933 0-1.31.468-2.38 1.236-3.22-.124-.303-.536-1.524.117-3.176 0 0 1.008-.323 3.301 1.23a11.52 11.52 0 013.003-.404c1.018.005 2.045.137 3.003.404 2.291-1.553 3.297-1.23 3.297-1.23.655 1.653.243 2.874.12 3.176.77.84 1.235 1.91 1.235 3.22 0 4.61-2.807 5.625-5.48 5.921.43.37.815 1.103.815 2.222v3.293c0 .319.216.694.825.576C20.565 21.796 24 17.3 24 12c0-6.627-5.373-12-12-12z"/></svg>
@@ -336,9 +341,12 @@
         t.classList.add('show');
         setTimeout(() => t.classList.remove('show'), 2500);
       }).catch(() => {
-        alert("No se pudo copiar el correo. Escríbenos a pedrocarramolino34@gmail.com");
+        alert("No se pudo copiar el correo. Escríbeme a pedrocarramolino34@gmail.com");
       });
     }
+
+    // ── FOOTER YEAR ──
+    document.getElementById('year').textContent = new Date().getFullYear();
 
     // ── MOBILE MENU ──
     const menuBtn = document.getElementById('menuBtn');
