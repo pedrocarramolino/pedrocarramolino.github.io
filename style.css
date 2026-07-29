@@ -286,6 +286,9 @@ section { padding: 7rem 2rem; transition: background 0.3s; }
 
 /* ── PROJECTS ── */
 #proyectos { background: var(--surface); border-top: 1px solid var(--line); }
+.projects-grid {
+  display: flex; flex-direction: column; gap: 2rem;
+}
 .project-card {
   border: 1px solid var(--line); border-radius: 16px;
   padding: 2.5rem; background: var(--surface2);
