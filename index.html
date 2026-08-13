@@ -73,7 +73,7 @@
 
   <section id="habilidades">
     <div class="section-inner">
-      <div class="section-label">Stack</div>
+      <div class="section-label"><span class="section-index">01</span>Stack</div>
       <h2 class="section-title">Habilidades</h2>
       <div class="skills-grid">
         <div class="skill-card"><img src="recursos/html.webp" alt="HTML" width="40" height="40" loading="lazy"><span>HTML</span></div>
@@ -91,7 +91,7 @@
 
   <section id="experiencia">
     <div class="section-inner">
-      <div class="section-label">Trayectoria</div>
+      <div class="section-label"><span class="section-index">02</span>Trayectoria</div>
       <h2 class="section-title">Experiencia</h2>
       <div class="timeline">
         <div class="timeline-item">
@@ -137,7 +137,7 @@
 
   <section id="proyectos">
     <div class="section-inner">
-      <div class="section-label">Portfolio</div>
+      <div class="section-label"><span class="section-index">03</span>Portfolio</div>
       <h2 class="section-title">Proyectos</h2>
       <div class="projects-grid">
         <div class="project-card">
@@ -397,6 +397,23 @@
     });
     document.querySelectorAll('.timeline-item, .project-card').forEach((el, i) => {
       el.dataset.delay = i * 100; observer.observe(el);
+    });
+
+    // ── NAV ACTIVE STATE (scroll spy) ──
+    const navLinks = document.querySelectorAll('#mainNav a[href^="#"]');
+    const spyObserver = new IntersectionObserver((entries) => {
+      entries.forEach(e => {
+        if (e.isIntersecting) {
+          const link = document.querySelector(`#mainNav a[href="#${e.target.id}"]`);
+          navLinks.forEach(a => a.classList.remove('active'));
+          if (link) link.classList.add('active');
+        }
+      });
+    }, { rootMargin: '-45% 0px -50% 0px' });
+
+    navLinks.forEach(link => {
+      const section = document.querySelector(link.getAttribute('href'));
+      if (section) spyObserver.observe(section);
     });
   </script>
 </body>
