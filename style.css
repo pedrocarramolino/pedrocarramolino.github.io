@@ -273,6 +273,7 @@ h3 {
 .project p { margin-top: 8px; color: var(--muted); font-size: 16px; }
 .project .stack { margin-top: 12px; color: var(--ink); font-size: 14px; font-weight: 500; }
 .project .text-link { display: inline-block; margin-top: 12px; font-size: 15px; }
+.project .project-links { display: flex; flex-wrap: wrap; gap: 4px 20px; margin-top: 0; }
 
 /* ── Experiencia y formación ── */
 .jobs { display: grid; gap: 44px; }
