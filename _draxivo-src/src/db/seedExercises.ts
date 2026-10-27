@@ -1,0 +1,163 @@
+import type { Equipment, Exercise, MovementType, MuscleGroup, TrackingType } from './types';
+
+/** Versión de la biblioteca inicial. Al aumentarla se añaden los ejercicios nuevos sin duplicar. */
+export const LIBRARY_VERSION = 1;
+
+type Row = [string, string, MuscleGroup, MuscleGroup[], Equipment, MovementType, TrackingType, string];
+
+const W: TrackingType = 'weight_reps';
+const BW: TrackingType = 'bodyweight_reps';
+
+const ROWS: Row[] = [
+  // Pecho
+  ['press-banca', 'Press de banca con barra', 'pecho', ['triceps', 'hombros'], 'barra', 'compuesto', W, 'Tumbado en el banco, escápulas retraídas y pies firmes. Baja la barra controlada a la mitad del pecho y empuja hasta extender los codos.'],
+  ['press-inclinado-barra', 'Press inclinado con barra', 'pecho', ['hombros', 'triceps'], 'barra', 'compuesto', W, 'Banco a 30–45°. Baja la barra hacia la parte alta del pecho y empuja en línea recta.'],
+  ['press-declinado-barra', 'Press declinado con barra', 'pecho', ['triceps'], 'barra', 'compuesto', W, 'Banco declinado con las piernas sujetas. Baja la barra a la parte baja del pecho y empuja.'],
+  ['press-banca-mancuernas', 'Press de banca con mancuernas', 'pecho', ['triceps', 'hombros'], 'mancuernas', 'compuesto', W, 'Con una mancuerna en cada mano, baja hasta notar estiramiento en el pecho y empuja juntando ligeramente las mancuernas arriba.'],
+  ['press-inclinado-mancuernas', 'Press inclinado con mancuernas', 'pecho', ['hombros', 'triceps'], 'mancuernas', 'compuesto', W, 'Banco a 30–45°. Baja las mancuernas a los lados del pecho y empuja hacia arriba.'],
+  ['aperturas-mancuernas', 'Aperturas con mancuernas', 'pecho', ['hombros'], 'mancuernas', 'aislamiento', W, 'Codos ligeramente flexionados. Abre los brazos en arco hasta notar estiramiento y vuelve sin chocar las mancuernas.'],
+  ['cruce-poleas', 'Cruce de poleas', 'pecho', ['hombros'], 'polea', 'aislamiento', W, 'De pie entre dos poleas altas, junta las manos delante del cuerpo en arco manteniendo los codos fijos.'],
+  ['press-pecho-maquina', 'Press de pecho en máquina', 'pecho', ['triceps', 'hombros'], 'maquina', 'compuesto', W, 'Ajusta el asiento para que las asas queden a la altura del pecho y empuja sin bloquear los codos de golpe.'],
+  ['pec-deck', 'Contractor de pecho (pec deck)', 'pecho', ['hombros'], 'maquina', 'aislamiento', W, 'Espalda apoyada, junta los brazos delante del pecho y vuelve controlando el estiramiento.'],
+  ['flexiones', 'Flexiones', 'pecho', ['triceps', 'hombros', 'abdominales'], 'peso_corporal', 'compuesto', BW, 'Manos algo más abiertas que los hombros y cuerpo en línea. Baja el pecho cerca del suelo y empuja.'],
+  ['fondos-pecho', 'Fondos en paralelas (pecho)', 'pecho', ['triceps', 'hombros'], 'peso_corporal', 'compuesto', BW, 'Inclina el torso hacia delante, baja hasta que los hombros queden a la altura de los codos y empuja.'],
+  ['fondos-lastrados', 'Fondos lastrados', 'pecho', ['triceps', 'hombros'], 'peso_corporal', 'compuesto', 'weighted_bodyweight', 'Igual que los fondos, con lastre en cinturón. Registra sólo el peso añadido.'],
+  ['fondos-asistidos', 'Fondos asistidos en máquina', 'pecho', ['triceps'], 'maquina', 'compuesto', 'assisted_bodyweight', 'Arrodíllate en la plataforma; registra la asistencia que usas. Menos asistencia es más difícil.'],
+  // Espalda
+  ['peso-muerto', 'Peso muerto', 'espalda', ['isquios', 'gluteos', 'antebrazos'], 'barra', 'compuesto', W, 'Barra sobre el mediopié, espalda neutra. Empuja el suelo con las piernas y extiende la cadera hasta quedar erguido.'],
+  ['dominadas', 'Dominadas', 'espalda', ['biceps', 'antebrazos'], 'peso_corporal', 'compuesto', BW, 'Agarre prono algo más ancho que los hombros. Sube hasta pasar la barbilla por encima de la barra y baja completo.'],
+  ['dominadas-lastradas', 'Dominadas lastradas', 'espalda', ['biceps'], 'peso_corporal', 'compuesto', 'weighted_bodyweight', 'Dominadas con lastre. Registra sólo el peso añadido.'],
+  ['dominadas-asistidas', 'Dominadas asistidas', 'espalda', ['biceps'], 'maquina', 'compuesto', 'assisted_bodyweight', 'En máquina o con banda. Registra la asistencia utilizada.'],
+  ['chin-ups', 'Dominadas supinas', 'espalda', ['biceps'], 'peso_corporal', 'compuesto', BW, 'Agarre supino a la anchura de los hombros. Sube llevando el pecho hacia la barra.'],
+  ['jalon-pecho', 'Jalón al pecho', 'espalda', ['biceps'], 'polea', 'compuesto', W, 'Sentado con los muslos sujetos, lleva la barra a la parte alta del pecho bajando los codos.'],
+  ['jalon-agarre-cerrado', 'Jalón con agarre cerrado', 'espalda', ['biceps'], 'polea', 'compuesto', W, 'Con agarre estrecho neutro, tira hacia el pecho manteniendo el torso estable.'],
+  ['remo-barra', 'Remo con barra', 'espalda', ['biceps', 'isquios'], 'barra', 'compuesto', W, 'Torso inclinado y espalda neutra. Lleva la barra hacia el abdomen y baja controlando.'],
+  ['remo-mancuerna', 'Remo con mancuerna a una mano', 'espalda', ['biceps'], 'mancuernas', 'compuesto', W, 'Apoya rodilla y mano en el banco. Tira de la mancuerna hacia la cadera.'],
+  ['remo-polea-baja', 'Remo en polea baja', 'espalda', ['biceps'], 'polea', 'compuesto', W, 'Sentado, espalda erguida. Tira del agarre hacia el abdomen juntando las escápulas.'],
+  ['remo-maquina', 'Remo en máquina', 'espalda', ['biceps'], 'maquina', 'compuesto', W, 'Pecho apoyado, tira de las asas hasta que los codos pasen el torso.'],
+  ['remo-t', 'Remo en T', 'espalda', ['biceps'], 'barra', 'compuesto', W, 'Con la barra anclada, inclina el torso y rema hacia el pecho.'],
+  ['pullover-polea', 'Pullover en polea alta', 'espalda', ['triceps'], 'polea', 'aislamiento', W, 'Brazos casi extendidos, lleva la barra en arco desde arriba hasta los muslos.'],
+  ['face-pull', 'Face pull', 'hombros', ['espalda'], 'polea', 'aislamiento', W, 'Polea a la altura de la cara con cuerda. Tira separando las manos hacia las orejas.'],
+  ['hiperextensiones', 'Hiperextensiones', 'espalda', ['gluteos', 'isquios'], 'peso_corporal', 'aislamiento', BW, 'En el banco romano, flexiona la cadera y sube hasta alinear el torso con las piernas.'],
+  ['encogimientos', 'Encogimientos con mancuernas', 'espalda', ['antebrazos'], 'mancuernas', 'aislamiento', W, 'Brazos estirados, eleva los hombros hacia las orejas y baja lentamente.'],
+  // Hombros
+  ['press-militar', 'Press militar con barra', 'hombros', ['triceps'], 'barra', 'compuesto', W, 'De pie, glúteos y abdomen activos. Empuja la barra por encima de la cabeza en línea recta.'],
+  ['press-hombro-mancuernas', 'Press de hombro con mancuernas', 'hombros', ['triceps'], 'mancuernas', 'compuesto', W, 'Sentado o de pie, empuja las mancuernas desde la altura de los hombros hasta arriba.'],
+  ['press-arnold', 'Press Arnold', 'hombros', ['triceps'], 'mancuernas', 'compuesto', W, 'Empieza con las palmas hacia ti y gira las muñecas mientras empujas hacia arriba.'],
+  ['press-hombro-maquina', 'Press de hombro en máquina', 'hombros', ['triceps'], 'maquina', 'compuesto', W, 'Ajusta el asiento y empuja las asas por encima de la cabeza.'],
+  ['elevaciones-laterales', 'Elevaciones laterales', 'hombros', [], 'mancuernas', 'aislamiento', W, 'Codos ligeramente flexionados, eleva los brazos hasta la altura de los hombros.'],
+  ['elevaciones-laterales-polea', 'Elevaciones laterales en polea', 'hombros', [], 'polea', 'aislamiento', W, 'Con la polea baja, eleva el brazo lateralmente manteniendo tensión constante.'],
+  ['elevaciones-frontales', 'Elevaciones frontales', 'hombros', ['pecho'], 'mancuernas', 'aislamiento', W, 'Eleva las mancuernas al frente hasta la altura de los ojos.'],
+  ['pajaros', 'Pájaros con mancuernas', 'hombros', ['espalda'], 'mancuernas', 'aislamiento', W, 'Torso inclinado, abre los brazos lateralmente para trabajar el deltoides posterior.'],
+  ['reverse-pec-deck', 'Contractor inverso', 'hombros', ['espalda'], 'maquina', 'aislamiento', W, 'Frente a la máquina, abre los brazos hacia atrás con los codos ligeramente flexionados.'],
+  ['remo-al-menton', 'Remo al mentón', 'hombros', ['espalda'], 'barra', 'compuesto', W, 'Agarre medio, eleva la barra pegada al cuerpo hasta la altura del pecho.'],
+  ['pino-flexiones', 'Flexiones en pino', 'hombros', ['triceps'], 'peso_corporal', 'compuesto', BW, 'Apoyado en la pared boca abajo, baja la cabeza hacia el suelo y empuja.'],
+  // Bíceps
+  ['curl-barra', 'Curl con barra', 'biceps', ['antebrazos'], 'barra', 'aislamiento', W, 'Codos pegados al cuerpo. Flexiona hasta arriba sin balancear el torso.'],
+  ['curl-barra-z', 'Curl con barra Z', 'biceps', ['antebrazos'], 'barra', 'aislamiento', W, 'Igual que el curl con barra, con agarre semiprono más cómodo para las muñecas.'],
+  ['curl-mancuernas', 'Curl con mancuernas', 'biceps', ['antebrazos'], 'mancuernas', 'aislamiento', W, 'Alterna o simultanea, girando las palmas hacia arriba al subir.'],
+  ['curl-martillo', 'Curl martillo', 'biceps', ['antebrazos'], 'mancuernas', 'aislamiento', W, 'Agarre neutro durante todo el recorrido.'],
+  ['curl-inclinado', 'Curl inclinado con mancuernas', 'biceps', [], 'mancuernas', 'aislamiento', W, 'En banco inclinado, deja los brazos colgar por detrás del torso y flexiona.'],
+  ['curl-predicador', 'Curl en banco Scott', 'biceps', [], 'barra', 'aislamiento', W, 'Brazos apoyados en el banco, baja hasta casi extender y sube controlando.'],
+  ['curl-polea', 'Curl en polea', 'biceps', [], 'polea', 'aislamiento', W, 'Con la polea baja, flexiona los codos manteniéndolos fijos.'],
+  ['curl-concentrado', 'Curl concentrado', 'biceps', [], 'mancuernas', 'aislamiento', W, 'Sentado con el codo apoyado en el muslo, flexiona lentamente.'],
+  // Tríceps
+  ['press-cerrado', 'Press de banca agarre cerrado', 'triceps', ['pecho', 'hombros'], 'barra', 'compuesto', W, 'Manos a la anchura de los hombros, codos cerca del cuerpo.'],
+  ['extension-polea', 'Extensión de tríceps en polea', 'triceps', [], 'polea', 'aislamiento', W, 'Codos pegados, extiende los brazos hacia abajo hasta bloquear.'],
+  ['extension-cuerda', 'Extensión con cuerda en polea', 'triceps', [], 'polea', 'aislamiento', W, 'Con cuerda, extiende y separa las manos al final.'],
+  ['press-frances', 'Press francés', 'triceps', [], 'barra', 'aislamiento', W, 'Tumbado, baja la barra hacia la frente flexionando sólo los codos.'],
+  ['extension-sobre-cabeza', 'Extensión de tríceps sobre la cabeza', 'triceps', [], 'mancuernas', 'aislamiento', W, 'Con una mancuerna sujeta con ambas manos, bájala por detrás de la cabeza y extiende.'],
+  ['patada-triceps', 'Patada de tríceps', 'triceps', [], 'mancuernas', 'aislamiento', W, 'Torso inclinado, codo fijo junto al cuerpo, extiende el antebrazo hacia atrás.'],
+  ['fondos-banco', 'Fondos en banco', 'triceps', ['pecho'], 'peso_corporal', 'compuesto', BW, 'Manos en el borde del banco, baja flexionando los codos y empuja.'],
+  // Antebrazos
+  ['curl-muneca', 'Curl de muñeca', 'antebrazos', [], 'barra', 'aislamiento', W, 'Antebrazos apoyados, flexiona las muñecas hacia arriba.'],
+  ['curl-muneca-inverso', 'Curl de muñeca inverso', 'antebrazos', [], 'barra', 'aislamiento', W, 'Con agarre prono, extiende las muñecas hacia arriba.'],
+  ['paseo-granjero', 'Paseo del granjero', 'antebrazos', ['espalda', 'abdominales', 'cuerpo_completo'], 'mancuernas', 'compuesto', 'distance_duration', 'Camina erguido con una carga pesada en cada mano.'],
+  ['colgado-barra', 'Colgado en barra', 'antebrazos', ['espalda'], 'peso_corporal', 'aislamiento', 'duration', 'Cuélgate de la barra con los brazos estirados el mayor tiempo posible.'],
+  // Cuádriceps
+  ['sentadilla', 'Sentadilla con barra', 'cuadriceps', ['gluteos', 'isquios', 'abdominales'], 'barra', 'compuesto', W, 'Barra sobre los trapecios, pies a la anchura de los hombros. Baja con la espalda neutra y sube empujando el suelo.'],
+  ['sentadilla-frontal', 'Sentadilla frontal', 'cuadriceps', ['gluteos', 'abdominales'], 'barra', 'compuesto', W, 'Barra apoyada sobre los deltoides frontales, codos altos y torso erguido.'],
+  ['sentadilla-goblet', 'Sentadilla goblet', 'cuadriceps', ['gluteos'], 'mancuernas', 'compuesto', W, 'Sujeta una mancuerna junto al pecho y baja entre las rodillas.'],
+  ['sentadilla-hack', 'Sentadilla hack', 'cuadriceps', ['gluteos'], 'maquina', 'compuesto', W, 'Espalda apoyada en la máquina, baja controlando y empuja con los pies.'],
+  ['prensa', 'Prensa de piernas', 'cuadriceps', ['gluteos', 'isquios'], 'maquina', 'compuesto', W, 'Pies a la anchura de la cadera. Baja hasta unos 90° sin despegar la zona lumbar.'],
+  ['extension-cuadriceps', 'Extensión de cuádriceps', 'cuadriceps', [], 'maquina', 'aislamiento', W, 'Extiende las rodillas hasta arriba y baja lentamente.'],
+  ['zancadas', 'Zancadas con mancuernas', 'cuadriceps', ['gluteos', 'isquios'], 'mancuernas', 'compuesto', W, 'Da un paso amplio y baja hasta que ambas rodillas formen unos 90°.'],
+  ['bulgara', 'Sentadilla búlgara', 'cuadriceps', ['gluteos'], 'mancuernas', 'compuesto', W, 'Pie trasero apoyado en un banco, baja con el torso estable.'],
+  ['step-up', 'Subidas al cajón', 'cuadriceps', ['gluteos'], 'mancuernas', 'compuesto', W, 'Sube al cajón empujando con la pierna adelantada.'],
+  ['sentadilla-peso-corporal', 'Sentadilla sin carga', 'cuadriceps', ['gluteos'], 'peso_corporal', 'compuesto', BW, 'Sentadilla con el propio peso corporal, controlando la técnica.'],
+  ['sissy-squat', 'Sissy squat', 'cuadriceps', [], 'peso_corporal', 'aislamiento', BW, 'Inclina el cuerpo hacia atrás mientras flexionas las rodillas.'],
+  // Isquiotibiales
+  ['peso-muerto-rumano', 'Peso muerto rumano', 'isquios', ['gluteos', 'espalda'], 'barra', 'compuesto', W, 'Rodillas ligeramente flexionadas, lleva la cadera atrás bajando la barra pegada a las piernas.'],
+  ['peso-muerto-rumano-mancuernas', 'Peso muerto rumano con mancuernas', 'isquios', ['gluteos'], 'mancuernas', 'compuesto', W, 'Igual que con barra, con una mancuerna en cada mano.'],
+  ['curl-femoral-tumbado', 'Curl femoral tumbado', 'isquios', ['gemelos'], 'maquina', 'aislamiento', W, 'Boca abajo, flexiona las rodillas llevando los talones hacia los glúteos.'],
+  ['curl-femoral-sentado', 'Curl femoral sentado', 'isquios', [], 'maquina', 'aislamiento', W, 'Sentado con los muslos sujetos, flexiona las rodillas.'],
+  ['buenos-dias', 'Buenos días', 'isquios', ['espalda', 'gluteos'], 'barra', 'compuesto', W, 'Barra en la espalda, inclina el torso desde la cadera con la espalda neutra.'],
+  ['nordic-curl', 'Curl nórdico', 'isquios', [], 'peso_corporal', 'aislamiento', BW, 'De rodillas con los tobillos sujetos, baja el torso lentamente hacia delante.'],
+  // Glúteos
+  ['hip-thrust', 'Hip thrust con barra', 'gluteos', ['isquios'], 'barra', 'compuesto', W, 'Espalda alta apoyada en el banco, eleva la cadera hasta alinear torso y muslos.'],
+  ['puente-gluteo', 'Puente de glúteo', 'gluteos', ['isquios'], 'peso_corporal', 'aislamiento', BW, 'Tumbado boca arriba, eleva la cadera apretando los glúteos.'],
+  ['patada-gluteo-polea', 'Patada de glúteo en polea', 'gluteos', [], 'polea', 'aislamiento', W, 'Con tobillera, extiende la cadera llevando la pierna hacia atrás.'],
+  ['abduccion-maquina', 'Abducción de cadera en máquina', 'gluteos', [], 'maquina', 'aislamiento', W, 'Sentado, separa las piernas contra la resistencia.'],
+  ['aduccion-maquina', 'Aducción de cadera en máquina', 'cuadriceps', [], 'maquina', 'aislamiento', W, 'Sentado, junta las piernas contra la resistencia.'],
+  ['peso-muerto-sumo', 'Peso muerto sumo', 'gluteos', ['cuadriceps', 'espalda', 'isquios'], 'barra', 'compuesto', W, 'Pies muy abiertos y agarre entre las piernas; extiende cadera y rodillas.'],
+  ['monster-walk', 'Paso lateral con banda', 'gluteos', [], 'banda', 'aislamiento', BW, 'Con la banda en las rodillas o tobillos, camina lateralmente en semisentadilla.'],
+  // Gemelos
+  ['gemelo-de-pie', 'Elevación de gemelos de pie', 'gemelos', [], 'maquina', 'aislamiento', W, 'Eleva los talones al máximo y baja hasta notar estiramiento.'],
+  ['gemelo-sentado', 'Elevación de gemelos sentado', 'gemelos', [], 'maquina', 'aislamiento', W, 'Rodillas a 90°, eleva los talones con control.'],
+  ['gemelo-prensa', 'Gemelos en prensa', 'gemelos', [], 'maquina', 'aislamiento', W, 'En la prensa, empuja la plataforma con la punta de los pies.'],
+  // Abdominales
+  ['plancha', 'Plancha', 'abdominales', ['hombros'], 'peso_corporal', 'aislamiento', 'duration', 'Apoyado en antebrazos y puntas, mantén el cuerpo en línea.'],
+  ['plancha-lateral', 'Plancha lateral', 'abdominales', [], 'peso_corporal', 'aislamiento', 'duration', 'De lado sobre un antebrazo, mantén la cadera elevada.'],
+  ['crunch', 'Crunch abdominal', 'abdominales', [], 'peso_corporal', 'aislamiento', BW, 'Tumbado, eleva los hombros flexionando el tronco sin tirar del cuello.'],
+  ['crunch-polea', 'Crunch en polea', 'abdominales', [], 'polea', 'aislamiento', W, 'De rodillas frente a la polea alta, flexiona el tronco hacia el suelo.'],
+  ['elevacion-piernas', 'Elevación de piernas colgado', 'abdominales', ['antebrazos'], 'peso_corporal', 'aislamiento', BW, 'Colgado de la barra, eleva las piernas controlando el balanceo.'],
+  ['rueda-abdominal', 'Rueda abdominal', 'abdominales', ['hombros'], 'otros', 'aislamiento', BW, 'De rodillas, rueda hacia delante manteniendo el abdomen firme y vuelve.'],
+  ['russian-twist', 'Giros rusos', 'abdominales', [], 'peso_corporal', 'aislamiento', BW, 'Sentado con el torso inclinado, gira de lado a lado.'],
+  ['pallof', 'Press Pallof', 'abdominales', [], 'polea', 'aislamiento', W, 'De lado a la polea, extiende los brazos al frente resistiendo la rotación.'],
+  ['dead-bug', 'Dead bug', 'abdominales', [], 'peso_corporal', 'aislamiento', BW, 'Boca arriba, extiende brazo y pierna opuestos manteniendo la zona lumbar apoyada.'],
+  // Cuerpo completo
+  ['cargada', 'Cargada de potencia', 'cuerpo_completo', ['cuadriceps', 'espalda', 'hombros'], 'barra', 'compuesto', W, 'Extiende de forma explosiva cadera y rodillas y recibe la barra sobre los hombros.'],
+  ['arrancada', 'Arrancada', 'cuerpo_completo', ['hombros', 'cuadriceps'], 'barra', 'compuesto', W, 'Lleva la barra del suelo a encima de la cabeza en un solo movimiento.'],
+  ['thruster', 'Thruster', 'cuerpo_completo', ['cuadriceps', 'hombros'], 'barra', 'compuesto', W, 'Sentadilla frontal seguida de un press por encima de la cabeza.'],
+  ['kettlebell-swing', 'Swing con kettlebell', 'cuerpo_completo', ['gluteos', 'isquios'], 'otros', 'compuesto', W, 'Bisagra de cadera explosiva que impulsa la kettlebell hasta la altura del pecho.'],
+  ['burpees', 'Burpees', 'cuerpo_completo', ['pecho', 'cuadriceps'], 'peso_corporal', 'compuesto', BW, 'Flexión, salto de pies hacia las manos y salto vertical.'],
+  ['turkish-getup', 'Turkish get-up', 'cuerpo_completo', ['hombros', 'abdominales'], 'otros', 'compuesto', W, 'Pasa de tumbado a de pie sosteniendo una carga por encima de la cabeza.'],
+  // Cardio
+  ['correr', 'Correr', 'cardio', [], 'otros', 'cardio', 'distance_duration', 'Registra distancia y tiempo.'],
+  ['cinta', 'Cinta de correr', 'cardio', [], 'maquina', 'cardio', 'distance_duration', 'Registra distancia y tiempo en la cinta.'],
+  ['bicicleta', 'Bicicleta estática', 'cardio', [], 'maquina', 'cardio', 'distance_duration', 'Registra distancia y tiempo.'],
+  ['remo-ergometro', 'Remoergómetro', 'cardio', ['espalda'], 'maquina', 'cardio', 'distance_duration', 'Empuja con las piernas, después inclina y tira con los brazos.'],
+  ['eliptica', 'Elíptica', 'cardio', [], 'maquina', 'cardio', 'distance_duration', 'Registra distancia y tiempo.'],
+  ['comba', 'Comba', 'cardio', ['gemelos'], 'otros', 'cardio', 'duration', 'Salta a la comba con saltos cortos y ritmo constante.'],
+  ['caminar', 'Caminar', 'cardio', [], 'otros', 'cardio', 'distance_duration', 'Registra distancia y tiempo.'],
+  ['escaladora', 'Escaladora', 'cardio', ['gluteos'], 'maquina', 'cardio', 'duration', 'Sube escalones a ritmo constante.'],
+  // Movilidad
+  ['movilidad-cadera', 'Movilidad de cadera 90/90', 'movilidad', ['gluteos'], 'peso_corporal', 'movilidad', 'duration', 'Sentado con ambas piernas a 90°, alterna el lado sin usar las manos.'],
+  ['estiramiento-isquios', 'Estiramiento de isquiotibiales', 'movilidad', ['isquios'], 'peso_corporal', 'movilidad', 'duration', 'Con la pierna extendida, inclina el torso desde la cadera.'],
+  ['dislocaciones-banda', 'Dislocaciones de hombro con banda', 'movilidad', ['hombros'], 'banda', 'movilidad', BW, 'Con los brazos estirados, pasa la banda desde delante hasta detrás del cuerpo.'],
+  ['gato-camello', 'Gato-camello', 'movilidad', ['espalda'], 'peso_corporal', 'movilidad', BW, 'En cuadrupedia, alterna flexión y extensión de la columna.'],
+  ['rotacion-toracica', 'Rotación torácica', 'movilidad', ['espalda'], 'peso_corporal', 'movilidad', BW, 'De lado o en cuadrupedia, gira el torso abriendo el brazo hacia el techo.'],
+  ['tobillo-pared', 'Movilidad de tobillo en pared', 'movilidad', ['gemelos'], 'peso_corporal', 'movilidad', BW, 'Lleva la rodilla hacia la pared sin levantar el talón.'],
+  // Bandas
+  ['remo-banda', 'Remo con banda elástica', 'espalda', ['biceps'], 'banda', 'compuesto', BW, 'Tira de la banda hacia el abdomen juntando las escápulas.'],
+  ['press-banda', 'Press de pecho con banda', 'pecho', ['triceps'], 'banda', 'compuesto', BW, 'Con la banda anclada detrás, empuja hacia delante.'],
+  ['curl-banda', 'Curl con banda elástica', 'biceps', [], 'banda', 'aislamiento', BW, 'Pisa la banda y flexiona los codos.'],
+];
+
+export function seedExercises(now = Date.now()): Exercise[] {
+  return ROWS.map(([id, name, primaryMuscle, secondaryMuscles, equipment, movement, tracking, instructions]) => ({
+    id: `ex-${id}`,
+    name,
+    primaryMuscle,
+    secondaryMuscles,
+    equipment,
+    movement,
+    tracking,
+    instructions,
+    notes: '',
+    custom: false,
+    archived: false,
+    createdAt: now,
+    updatedAt: now,
+  }));
+}
