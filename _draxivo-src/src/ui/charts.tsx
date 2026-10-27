@@ -20,9 +20,12 @@ interface LineChartProps {
   pointsLabel?: string;
   goal?: number | null;
   goalLabel?: string;
+  /** Relleno suave bajo la línea principal. */
+  area?: boolean;
 }
 
-const PAD = { top: 14, right: 12, bottom: 24, left: 40 };
+const PAD_LEFT = { top: 14, right: 12, bottom: 24, left: 40 };
+const PAD_RIGHT = { top: 14, right: 36, bottom: 24, left: 6 };
 
 function niceTicks(min: number, max: number, count = 4): number[] {
   if (min === max) {
@@ -41,7 +44,8 @@ function niceTicks(min: number, max: number, count = 4): number[] {
   return out;
 }
 
-export function LineChart({ points, line, height = 200, formatY, formatX, label, showDots = true, lineLabel, pointsLabel, goal, goalLabel }: LineChartProps) {
+export function LineChart({ points, line, height = 200, formatY, formatX, label, showDots = true, lineLabel, pointsLabel, goal, goalLabel, area = true }: LineChartProps) {
+  const PAD = area ? PAD_RIGHT : PAD_LEFT;
   const ref = useRef<SVGSVGElement>(null);
   const [hover, setHover] = useState<number | null>(null);
   const [width, setWidth] = useState(340);
@@ -64,6 +68,9 @@ export function LineChart({ points, line, height = 200, formatY, formatX, label,
   const ys = all.map((p) => p.y);
   if (goal != null) ys.push(goal);
   const ticks = niceTicks(Math.min(...ys), Math.max(...ys));
+  // Si el formato pierde decimales y repite etiquetas, se muestra con un decimal.
+  const rawLabels = ticks.map(formatY);
+  const fmtAxis = new Set(rawLabels).size < rawLabels.length ? (v: number) => v.toFixed(1).replace('.', ',') : formatY;
   const yMin = ticks[0];
   const yMax = ticks[ticks.length - 1];
   const keys = [...new Set(all.map((p) => p.x))].sort();
@@ -114,8 +121,8 @@ export function LineChart({ points, line, height = 200, formatY, formatX, label,
           {ticks.map((t) => (
             <g key={t}>
               <line x1={PAD.left} x2={width - PAD.right} y1={yPos(t)} y2={yPos(t)} className="chart-grid" />
-              <text x={PAD.left - 6} y={yPos(t) + 4} className="chart-axis" textAnchor="end">
-                {formatY(t)}
+              <text x={area ? width - 4 : PAD.left - 6} y={yPos(t) + 4} className="chart-axis" textAnchor="end">
+                {fmtAxis(t)}
               </text>
             </g>
           ))}
@@ -133,9 +140,12 @@ export function LineChart({ points, line, height = 200, formatY, formatX, label,
             </g>
           )}
           {line && line.length > 0 && <path d={path(points)} className="chart-line-faint" />}
+          {area && primary.length > 1 && (
+            <path d={`${path(primary)} L${xPos(primary[primary.length - 1].x).toFixed(1)},${(PAD.top + ih).toFixed(1)} L${xPos(primary[0].x).toFixed(1)},${(PAD.top + ih).toFixed(1)} Z`} className="chart-area" />
+          )}
           <path d={path(primary)} className="chart-line" />
           {showDots &&
-            points.length <= 60 &&
+            points.length <= (area ? 14 : 60) &&
             points.map((p) => <circle key={p.x} cx={xPos(p.x)} cy={yPos(p.y)} r={line ? 3 : 3.5} className={line ? 'chart-dot-faint' : 'chart-dot'} />)}
           {hk && (
             <g>

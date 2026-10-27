@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { CalendarDays, ClipboardCheck, Dumbbell, Play, Plus, Scale as ScaleIcon } from 'lucide-react';
+import { ArrowDown, ArrowUp, CalendarDays, ChevronRight, ClipboardCheck, Dumbbell, History as HistoryIcon, Play, Plus, Scale as ScaleIcon } from 'lucide-react';
 import { useSettings } from '../app/context';
 import { useQuery } from '../app/hooks';
 import { navigate } from '../app/router';
@@ -7,11 +7,13 @@ import { getMeta, listBodyWeights, listPlan, listReviews, listWeekGoals, setMeta
 import { goalForWeek, pendingReviewWeek } from '../domain/review';
 import { periodStats, workoutStats } from '../domain/metrics';
 import { weightSummary } from '../domain/weight';
-import { addDays, fmtDate, fmtDateLong, fmtMinutes, fmtRange, relativeDay, today, weekStart, WEEKDAYS_SHORT } from '../lib/dates';
-import { fmtSigned, fmtVolume, fmtWeightNum, wUnit } from '../lib/units';
-import { Ring, Sparkline, WeekDots } from '../ui/charts';
-import { Button, Empty, List, Page, Row, Section } from '../ui/kit';
+import { addDays, fmtDateLong, fmtMinutes, fmtRange, relativeDay, today, weekStart, weekday, WEEKDAYS_ABBR, WEEKDAYS_SHORT } from '../lib/dates';
+import { fmtSigned, fmtVolume, fmtWeightNum, num, toDisplayWeight, wUnit } from '../lib/units';
+import { LineChart, WeekDots } from '../ui/charts';
+import { Button, Card, Empty, IconButton, IconTile, Page, Progress, Section } from '../ui/kit';
 import { WeightSheet, useRoutines, useStartWorkout, useWorkouts } from './shared';
+
+const cap = (s: string) => s.replace(/^./, (c) => c.toUpperCase());
 
 export function Home() {
   const { settings } = useSettings();
@@ -28,7 +30,8 @@ export function Home() {
   const t = today();
   const ws = weekStart(t);
   const we = addDays(ws, 6);
-  if (!workouts || !routines || !plan || !weights || !reviews || !goals) return <Page title="Hoy">{null}</Page>;
+  const header = { title: 'Hoy', subtitle: <span className="date-line">{settings.name ? `Hola, ${settings.name} · ` : ''}{cap(fmtDateLong(t))}</span> };
+  if (!workouts || !routines || !plan || !weights || !reviews || !goals) return <Page {...header}>{null}</Page>;
 
   const goal = goalForWeek(ws, settings, goals);
   const week = periodStats(workouts, ws, we);
@@ -46,17 +49,72 @@ export function Home() {
   const nextPlan = plan.find((p) => p.kind === 'routine' && p.date >= t && !workouts.some((w) => w.date === p.date && w.routineId === p.routineId));
   const nextRoutine = nextPlan ? routines.find((r) => r.id === nextPlan.routineId) : undefined;
   const ws2 = weightSummary(weights);
+  const chartDays = ws2.days.filter((d) => d.date > addDays(t, -7));
   const pendingWeek = pendingReviewWeek(t, settings, reviews, snooze);
   const thisWeekReview = reviews.find((r) => r.weekStart === ws);
   const lastReview = reviews.find((r) => r.status === 'completed');
   const empty = !workouts.length && !weights.length && !routines.length;
-  const hello = settings.name ? `Hola, ${settings.name}` : null;
+  const todayPlanned = nextPlan?.date === t && nextRoutine;
 
   return (
-    <Page title="Hoy" subtitle={<span className="date-line">{hello ? `${hello} · ${fmtDateLong(t)}` : fmtDateLong(t).replace(/^./, (c) => c.toUpperCase())}</span>}>
+    <Page
+      {...header}
+      actions={
+        <IconButton label="Planificación semanal" onClick={() => navigate('/plan')}>
+          <CalendarDays size={24} />
+        </IconButton>
+      }
+    >
       <div className="stack">
-        <Button variant="primary" size="lg" block icon={<Play size={20} />} onClick={() => start(nextPlan?.date === t ? nextPlan.routineId : null, nextPlan?.date === t ? nextPlan.id : null)}>
-          {nextPlan?.date === t && nextRoutine ? `Empezar «${nextRoutine.name}»` : 'Empezar entrenamiento'}
+        {ws2.latest ? (
+          <Card onClick={() => navigate('/body/weight')} ariaLabel="Ver peso corporal">
+            <div className="split">
+              <span className="card-kicker">Peso actual</span>
+              <ChevronRight size={18} className="row-chevron" />
+            </div>
+            <div style={{ marginTop: 4 }}>
+              <span className="hero-number">{fmtWeightNum(ws2.latest.weightKg)}</span>
+              <span className="hero-unit">{wUnit()}</span>
+            </div>
+            <div className="delta mt" style={{ marginTop: 6 }}>
+              {ws2.weekly ? (
+                <>
+                  {ws2.weekly.delta < 0 ? <ArrowDown size={16} /> : <ArrowUp size={16} />}
+                  {fmtSigned(ws2.weekly.delta)} esta semana
+                </>
+              ) : (
+                <span>{relativeDay(ws2.latest.date)} · registra varios días para ver la variación</span>
+              )}
+            </div>
+            {chartDays.length >= 2 && (
+              <div className="mt">
+                <LineChart
+                  points={chartDays.map((d) => ({ x: d.date, y: toDisplayWeight(d.weight) }))}
+                  formatY={(v) => num(v, 0)}
+                  formatX={(k) => cap(WEEKDAYS_ABBR[weekday(k)])}
+                  label="Peso de los últimos días"
+                  height={110}
+                  showDots={false}
+                />
+              </div>
+            )}
+          </Card>
+        ) : (
+          <Card>
+            <div className="card-row">
+              <IconTile tone="blue">
+                <ScaleIcon size={22} />
+              </IconTile>
+              <div className="grow">
+                <div className="card-title">Sin registros de peso</div>
+                <div className="card-sub">Registra tu peso para ver su evolución y tendencia.</div>
+              </div>
+            </div>
+          </Card>
+        )}
+
+        <Button variant="primary" size="lg" block icon={<Play size={20} fill="currentColor" />} onClick={() => start(todayPlanned ? nextPlan!.routineId : null, todayPlanned ? nextPlan!.id : null)}>
+          {todayPlanned ? `Empezar «${nextRoutine!.name}»` : 'Empezar entrenamiento'}
         </Button>
         <div className="btn-row">
           <Button icon={<ScaleIcon size={18} />} onClick={() => setWeightOpen(true)}>
@@ -66,141 +124,116 @@ export function Home() {
             Planificar
           </Button>
         </div>
-      </div>
 
-      {pendingWeek && (
-        <Section>
-          <div className="callout">
-            <ClipboardCheck size={20} />
-            <div style={{ flex: 1 }}>
-              <strong>Revisión semanal disponible</strong>
-              <div className="small muted">Semana {fmtRange(pendingWeek, addDays(pendingWeek, 6))}. Te llevará un par de minutos.</div>
-              <div className="btn-row mt">
-                <Button size="sm" variant="primary" onClick={() => navigate(`/reviews/new?week=${pendingWeek}`)}>
-                  Empezar revisión
-                </Button>
-                <Button size="sm" onClick={() => setMeta('reviewSnoozedUntil', addDays(t, 1))}>
-                  Mañana
-                </Button>
-              </div>
-            </div>
-          </div>
-        </Section>
-      )}
-
-      {empty && (
-        <Section>
+        {empty && (
           <Empty
             icon={<Dumbbell size={26} />}
             title="Tu progreso empieza aquí"
             text="Crea tu primera rutina, empieza un entrenamiento libre o registra tu peso. Todo se guarda en este dispositivo."
             action={
-              <>
-                <Button variant="tinted" icon={<Plus size={18} />} onClick={() => navigate('/routines/new')}>
-                  Crear rutina
-                </Button>
-              </>
+              <Button variant="tinted" icon={<Plus size={18} />} onClick={() => navigate('/routines/new')}>
+                Crear rutina
+              </Button>
             }
           />
-        </Section>
-      )}
+        )}
 
-      <div className="home-grid">
-        <Section title="Esta semana" action={<button className="link" onClick={() => navigate('/plan')}>Plan</button>}>
-          <div className="panel">
-            <div className="home-hero">
-              <Ring value={pct} size={76} label={`${week.workouts} de ${goal} sesiones`}>
-                {goal > 0 ? `${Math.round(pct * 100)}%` : '—'}
-              </Ring>
-              <div>
-                <div>
-                  <span className="hero-number">{week.workouts}</span>
-                  <span className="hero-unit">/ {goal} sesiones</span>
-                </div>
-                <div className="small muted mt">{fmtRange(ws, we)}</div>
-              </div>
-            </div>
-            <div className="mt-lg">
-              <WeekDots days={days} label="Actividad de la semana" />
-            </div>
+        <Card onClick={() => navigate('/plan')} ariaLabel="Ver planificación de la semana">
+          <div className="card-kicker">Esta semana</div>
+          <div className="split" style={{ marginTop: 2 }}>
+            <span className="card-title">
+              {week.workouts} de {goal} entrenamientos
+            </span>
+            <span className="muted tabular">{goal > 0 ? `${Math.min(999, Math.round(pct * 100))} %` : '—'}</span>
           </div>
-          <List>
-            <Row title="Tiempo entrenado" value={fmtMinutes(week.minutes)} />
-            <Row title="Series efectivas" value={week.sets} />
-            <Row title="Volumen" value={week.volume ? fmtVolume(week.volume) : '—'} />
-          </List>
-        </Section>
+          <div className="mt">
+            <Progress value={pct} label="Cumplimiento semanal" />
+          </div>
+          <div className="mt-lg">
+            <WeekDots days={days} label="Actividad de la semana" />
+          </div>
+          <div className="small muted mt">
+            {fmtRange(ws, we)} · {fmtMinutes(week.minutes)} · {week.sets} series{week.volume ? ` · ${fmtVolume(week.volume)}` : ''}
+          </div>
+        </Card>
 
-        <Section title="Peso corporal" action={<button className="link" onClick={() => navigate('/body/weight')}>Ver todo</button>}>
-          {ws2.latest ? (
-            <div className="panel">
-              <div className="split">
-                <div>
-                  <span className="hero-number">{fmtWeightNum(ws2.latest.weightKg)}</span>
-                  <span className="hero-unit">{wUnit()}</span>
-                  <div className="small muted mt">{relativeDay(ws2.latest.date)}</div>
-                </div>
-                <Sparkline values={ws2.days.slice(-14).map((d) => d.weight)} width={110} height={40} label="Peso de las últimas mediciones" />
-              </div>
-              <div className="small mt">
-                {ws2.weekly ? (
+        <Card onClick={() => (nextRoutine ? navigate(`/routines/${nextRoutine.id}`) : navigate('/plan'))} ariaLabel="Próxima rutina">
+          <div className="card-row">
+            <IconTile>
+              <Dumbbell size={22} />
+            </IconTile>
+            <div className="grow">
+              <div className="card-kicker">Próxima rutina</div>
+              <div className="card-title">{nextRoutine ? nextRoutine.name : 'Sin sesiones planificadas'}</div>
+              <div className="card-sub">{nextRoutine && nextPlan ? `${relativeDay(nextPlan.date)} · ${nextRoutine.exercises.length} ejercicios` : 'Asigna rutinas a días concretos'}</div>
+            </div>
+            <ChevronRight size={18} className="row-chevron" />
+          </div>
+        </Card>
+
+        <Card
+          onClick={() =>
+            pendingWeek
+              ? navigate(`/reviews/new?week=${pendingWeek}`)
+              : thisWeekReview
+                ? navigate(thisWeekReview.status === 'completed' ? `/reviews/${thisWeekReview.id}` : `/reviews/${thisWeekReview.id}/edit`)
+                : navigate('/reviews')
+          }
+          ariaLabel="Revisión semanal"
+        >
+          <div className="card-row">
+            <IconTile>
+              <ClipboardCheck size={22} />
+            </IconTile>
+            <div className="grow">
+              <div className="card-kicker">Revisión semanal</div>
+              <div className="card-title">
+                {pendingWeek ? (
                   <>
-                    Variación semanal: <strong>{fmtSigned(ws2.weekly.delta)}</strong> <span className="muted">desde el {fmtDate(ws2.weekly.from.date)}</span>
+                    <span className="dot" />
+                    Pendiente
                   </>
+                ) : thisWeekReview ? (
+                  thisWeekReview.status === 'completed' ? 'Semana revisada' : 'Borrador'
+                ) : settings.reviewEnabled ? (
+                  'Al día'
                 ) : (
-                  <span className="muted">Registra el peso durante al menos una semana para ver la variación semanal.</span>
+                  'Desactivada'
                 )}
               </div>
+              <div className="card-sub">
+                {pendingWeek ? `Semana del ${fmtRange(pendingWeek, addDays(pendingWeek, 6))}` : lastReview ? `Última: ${fmtRange(lastReview.weekStart, lastReview.weekEnd)}` : 'Aún no has hecho ninguna revisión'}
+              </div>
             </div>
-          ) : (
-            <Empty icon={<ScaleIcon size={24} />} title="Sin registros de peso" text="Registra tu peso para ver su evolución y tendencia." action={<Button variant="tinted" onClick={() => setWeightOpen(true)}>Registrar peso</Button>} />
-          )}
-        </Section>
+            <ChevronRight size={18} className="row-chevron" />
+          </div>
+        </Card>
+        {pendingWeek && (
+          <div style={{ marginTop: -4 }}>
+            <Button size="sm" variant="plain" onClick={() => setMeta('reviewSnoozedUntil', addDays(t, 1))}>
+              Recordármelo mañana
+            </Button>
+          </div>
+        )}
 
-        <Section title="Próximo y reciente">
-          <List>
-            {nextPlan && nextRoutine ? (
-              <Row
-                icon={<CalendarDays size={20} />}
-                title={nextRoutine.name}
-                subtitle={`Planificada · ${relativeDay(nextPlan.date)}`}
-                onClick={() => navigate(`/routines/${nextRoutine.id}`)}
-              />
-            ) : (
-              <Row icon={<CalendarDays size={20} />} title="Sin sesiones planificadas" subtitle="Asigna rutinas a días concretos" onClick={() => navigate('/plan')} />
-            )}
-            {last ? (
-              <Row
-                icon={<Dumbbell size={20} />}
-                title={last.name}
-                subtitle={`Última sesión · ${relativeDay(last.date)} · ${fmtMinutes(workoutStats(last).durationMs / 60000)}`}
-                onClick={() => navigate(`/history/${last.id}`)}
-              />
-            ) : (
-              <Row icon={<Dumbbell size={20} />} title="Aún no hay sesiones" subtitle="Tu última sesión aparecerá aquí" />
-            )}
-          </List>
-        </Section>
-
-        <Section title="Revisión semanal">
-          <List>
-            {thisWeekReview ? (
-              <Row
-                icon={<ClipboardCheck size={20} />}
-                title={thisWeekReview.status === 'completed' ? 'Semana revisada' : 'Revisión en borrador'}
-                subtitle={fmtRange(thisWeekReview.weekStart, thisWeekReview.weekEnd)}
-                onClick={() => navigate(thisWeekReview.status === 'completed' ? `/reviews/${thisWeekReview.id}` : `/reviews/${thisWeekReview.id}/edit`)}
-              />
-            ) : (
-              <Row
-                icon={<ClipboardCheck size={20} />}
-                title={pendingWeek ? 'Pendiente' : settings.reviewEnabled ? 'Al día' : 'Desactivada'}
-                subtitle={lastReview ? `Última: ${fmtRange(lastReview.weekStart, lastReview.weekEnd)}` : 'Aún no has hecho ninguna revisión'}
-                onClick={() => navigate('/reviews')}
-              />
-            )}
-          </List>
-        </Section>
+        {last && (
+          <Section title="Última sesión">
+            <Card onClick={() => navigate(`/history/${last.id}`)} ariaLabel={`Última sesión: ${last.name}`}>
+              <div className="card-row">
+                <IconTile>
+                  <HistoryIcon size={22} />
+                </IconTile>
+                <div className="grow">
+                  <div className="card-title">{last.name}</div>
+                  <div className="card-sub">
+                    {relativeDay(last.date)} · {fmtMinutes(workoutStats(last).durationMs / 60000)} · {workoutStats(last).sets} series
+                  </div>
+                </div>
+                <ChevronRight size={18} className="row-chevron" />
+              </div>
+            </Card>
+          </Section>
+        )}
       </div>
       <WeightSheet open={weightOpen} onClose={() => setWeightOpen(false)} />
     </Page>

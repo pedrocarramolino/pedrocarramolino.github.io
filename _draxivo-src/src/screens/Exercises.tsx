@@ -10,8 +10,9 @@ import { fmtDate, fmtDateShort } from '../lib/dates';
 import { EQUIPMENT, MOVEMENTS, MUSCLES, TRACKING, supportsLoadMetrics, usesDistance, usesDuration } from '../lib/labels';
 import { fmtWeightNum, num, toDisplayWeight, wUnit } from '../lib/units';
 import { LineChart } from '../ui/charts';
-import { ActionMenu, Button, Empty, IconButton, Input, List, Loading, Page, Row, Section, Segmented, Select, Tag, useConfirm } from '../ui/kit';
-import { ExerciseForm, normalize, useExercises, useWorkouts } from './shared';
+import { ActionMenu, Button, Empty, IconButton, Input, List, Loading, Page, Row, Section, Segmented, Tag, cx, useConfirm } from '../ui/kit';
+import { ExerciseArt, sceneFor } from '../ui/ExerciseArt';
+import { ExerciseForm, MuscleChips, normalize, useExercises, useWorkouts } from './shared';
 import { fmtPR, fmtSet } from './WorkoutSummary';
 
 export function Exercises() {
@@ -41,7 +42,8 @@ export function Exercises() {
   if (!all) return <Loading />;
   return (
     <Page
-      title="Ejercicios"
+      title="Biblioteca de ejercicios"
+      large={false}
       back="/routines"
       backLabel="Rutinas"
       subtitle={`${all.filter((e) => !e.archived).length} ejercicios`}
@@ -51,28 +53,22 @@ export function Exercises() {
         </IconButton>
       }
     >
-      <Segmented label="Filtrar" value={tab} onChange={setTab} options={[{ value: 'all', label: 'Todos' }, { value: 'custom', label: 'Personalizados' }, { value: 'archived', label: 'Archivados' }]} />
-      <div className="search mt">
+      <div className="search">
         <Search size={18} />
-        <Input type="search" placeholder="Buscar ejercicio" value={q} onChange={(e) => setQ(e.target.value)} aria-label="Buscar ejercicio" />
+        <Input type="search" placeholder="Buscar ejercicios…" value={q} onChange={(e) => setQ(e.target.value)} aria-label="Buscar ejercicio" />
       </div>
-      <div className="form-grid">
-        <Select value={muscle} onChange={(v) => setMuscle(v as MuscleGroup | '')} aria-label="Grupo muscular">
-          <option value="">Todos los músculos</option>
-          {Object.entries(MUSCLES).map(([k, v]) => (
-            <option key={k} value={k}>
-              {v}
-            </option>
-          ))}
-        </Select>
-        <Select value={equip} onChange={(v) => setEquip(v as Equipment | '')} aria-label="Equipamiento">
-          <option value="">Todo el equipamiento</option>
-          {Object.entries(EQUIPMENT).map(([k, v]) => (
-            <option key={k} value={k}>
-              {v}
-            </option>
-          ))}
-        </Select>
+      <Segmented label="Filtrar" value={tab} onChange={setTab} options={[{ value: 'all', label: 'Todos' }, { value: 'custom', label: 'Personalizados' }, { value: 'archived', label: 'Archivados' }]} />
+      <div className="mt" />
+      <MuscleChips value={muscle} onChange={setMuscle} />
+      <div className="chips">
+        <button type="button" className={cx('chip', !equip && 'active')} onClick={() => setEquip('')}>
+          Todo el equipo
+        </button>
+        {(Object.keys(EQUIPMENT) as Equipment[]).map((k) => (
+          <button key={k} type="button" className={cx('chip', equip === k && 'active')} aria-pressed={equip === k} onClick={() => setEquip(equip === k ? '' : k)}>
+            {EQUIPMENT[k]}
+          </button>
+        ))}
       </div>
       <Section>
         {list.length ? (
@@ -80,6 +76,7 @@ export function Exercises() {
             {list.map((e) => (
               <Row
                 key={e.id}
+                icon={<ExerciseArt exercise={e} size={52} />}
                 title={e.name}
                 subtitle={`${MUSCLES[e.primaryMuscle]} · ${EQUIPMENT[e.equipment]}${counts.get(e.id) ? ` · ${counts.get(e.id)} sesiones` : ''}`}
                 value={e.custom ? <Tag>Propio</Tag> : undefined}
@@ -100,6 +97,7 @@ type Metric = 'e1rm' | 'maxWeight' | 'volume' | 'maxReps' | 'totalReps' | 'maxDu
 
 export function ExerciseDetail({ id }: { id: string }) {
   const ex = useQuery(() => getExercise(id), ['exercises'], [id]);
+  const all = useExercises(false);
   const workouts = useWorkouts();
   const toast = useToast();
   const confirm = useConfirm();
@@ -114,6 +112,15 @@ export function ExerciseDetail({ id }: { id: string }) {
       </Page>
     );
   const hist = exerciseHistory(workouts, id);
+  // Pasos breves a partir de las instrucciones (una frase por paso).
+  const steps = ex.instructions
+    .split(/(?<=\.)\s+/)
+    .map((x) => x.trim())
+    .filter(Boolean);
+  const variants = (all ?? [])
+    .filter((v) => v.id !== ex.id && !v.archived && v.primaryMuscle === ex.primaryMuscle && v.movement === ex.movement)
+    .sort((a, b) => Number(sceneFor(b) === sceneFor(ex)) - Number(sceneFor(a) === sceneFor(ex)) || a.name.localeCompare(b.name, 'es'))
+    .slice(0, 5);
   const prs = personalRecords(workouts, id);
   const load = supportsLoadMetrics(ex.tracking);
   const options: { value: Metric; label: string }[] = load
@@ -164,10 +171,10 @@ export function ExerciseDetail({ id }: { id: string }) {
 
   return (
     <Page
-      title={ex.name}
+      title="Detalle de ejercicio"
+      large={false}
       back="/exercises"
       backLabel="Ejercicios"
-      subtitle={`${MUSCLES[ex.primaryMuscle]} · ${EQUIPMENT[ex.equipment]}`}
       actions={
         <IconButton label="Opciones" onClick={() => setMenu(true)}>
           <Ellipsis size={22} />
@@ -175,6 +182,36 @@ export function ExerciseDetail({ id }: { id: string }) {
       }
     >
       {ex.archived && <p className="callout callout-neutral">Ejercicio archivado: no aparece al añadir ejercicios, pero su historial se conserva.</p>}
+      <div className="ex-hero">
+        <ExerciseArt exercise={ex} size="fill" label={`Ilustración: ${EQUIPMENT[ex.equipment]}`} />
+      </div>
+      <h2 className="page-title-inline mt-lg">{ex.name}</h2>
+      <p className="muted">
+        {MUSCLES[ex.primaryMuscle]} · {EQUIPMENT[ex.equipment]}
+      </p>
+      <div className="chips chips-wrap mt">
+        {[ex.primaryMuscle, ...ex.secondaryMuscles].map((m, i) => (
+          <span key={m} className={cx('tag', i === 0 && 'tag-blue')} style={{ padding: '6px 12px', fontSize: 13 }}>
+            {MUSCLES[m]}
+          </span>
+        ))}
+      </div>
+      {steps.length > 0 && (
+        <Section title="Instrucciones">
+          <div className="card">
+            <ol className="steps-list">
+              {steps.map((x) => (
+                <li key={x}>{x}</li>
+              ))}
+            </ol>
+          </div>
+        </Section>
+      )}
+      {ex.notes && (
+        <Section title="Notas personales">
+          <div className="card">{ex.notes}</div>
+        </Section>
+      )}
 
       <Section title="Progresión">
         {points.length ? (
@@ -236,14 +273,16 @@ export function ExerciseDetail({ id }: { id: string }) {
           <Row title="Secundarios" value={ex.secondaryMuscles.length ? ex.secondaryMuscles.map((x) => MUSCLES[x]).join(', ') : '—'} />
           <Row title="Unidad" value={load || ex.tracking === 'assisted_bodyweight' ? wUnit() : usesDuration(ex.tracking) ? (usesDistance(ex.tracking) ? 'm y s' : 's') : 'reps'} />
         </List>
-        {ex.instructions && <p className="mt" style={{ padding: '0 4px' }}>{ex.instructions}</p>}
-        {ex.notes && (
-          <div className="panel mt">
-            <div className="field-label">Notas personales</div>
-            {ex.notes}
-          </div>
-        )}
       </Section>
+      {variants.length > 0 && (
+        <Section title="Variantes y alternativas">
+          <List>
+            {variants.map((v) => (
+              <Row key={v.id} icon={<ExerciseArt exercise={v} size={48} />} title={v.name} subtitle={`${MUSCLES[v.primaryMuscle]} · ${EQUIPMENT[v.equipment]}`} onClick={() => navigate(`/exercises/${v.id}`)} />
+            ))}
+          </List>
+        </Section>
+      )}
 
       <ExerciseForm open={editing} onClose={() => setEditing(false)} initial={ex} />
       <ActionMenu

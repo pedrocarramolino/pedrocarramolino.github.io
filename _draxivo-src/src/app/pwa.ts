@@ -40,8 +40,11 @@ export function registerServiceWorker() {
       }
       reg.addEventListener('updatefound', () => track(reg.installing));
       let reloading = false;
+      // En la primera instalación el service worker toma el control sin cambiar la app:
+      // sólo se recarga cuando sustituye a una versión anterior.
+      const hadController = !!navigator.serviceWorker.controller;
       navigator.serviceWorker.addEventListener('controllerchange', () => {
-        if (reloading) return;
+        if (reloading || !hadController) return;
         reloading = true;
         location.reload();
       });

@@ -1,19 +1,22 @@
 import { useEffect, useRef, useState } from 'react';
-import { Database, Download, Info, ShieldCheck, Smartphone, Upload } from 'lucide-react';
+import { CalendarCheck, CalendarDays, ChartNoAxesColumnIncreasing, ClipboardCheck, Download, Globe, Info, Ruler, Scale as ScaleIcon, Settings, ShieldCheck, Smartphone, SunMoon, Target, Timer, Trash2, Upload, UserRound } from 'lucide-react';
 import { useSettings, useToast } from '../app/context';
 import { navigate } from '../app/router';
 import { isStandalone } from '../app/pwa';
 import { applyImport, downloadText, exportBackup, exportCSV, planImport, type ImportPlan } from '../db/backup';
 import { requestPersistentStorage, storageEstimate } from '../db/database';
 import { wipeAllData } from '../db/repo';
-import { deviceTimezone, fmtSeconds, today, WEEKDAYS } from '../lib/dates';
+import { dateKey, fmtMonth, fmtSeconds, today, WEEKDAYS, WEEKDAYS_ABBR } from '../lib/dates';
+import { fmtWeight } from '../lib/units';
 import { GOALS } from '../lib/labels';
-import { Button, Field, Input, List, LogoMark, Page, Row, Section, Segmented, Select, Sheet, Toggle, cx, useConfirm } from '../ui/kit';
+import { Button, Field, IconButton, Input, List, LogoMark, Page, PickerRow, Row, Section, Segmented, Sheet, Toggle, cx, useConfirm } from '../ui/kit';
 
 export function Profile() {
   const { settings: s, update } = useSettings();
+  const [nameOpen, setNameOpen] = useState(false);
   const [name, setName] = useState(s.name);
-  useEffect(() => setName(s.name), [s.name]);
+  const [daysOpen, setDaysOpen] = useState(false);
+  const [unitsOpen, setUnitsOpen] = useState(false);
   const zones = (() => {
     try {
       return (Intl as unknown as { supportedValuesOf?: (k: string) => string[] }).supportedValuesOf?.('timeZone') ?? [s.timezone];
@@ -21,114 +24,110 @@ export function Profile() {
       return [s.timezone];
     }
   })();
+  const since = fmtMonth(dateKey(s.createdAt));
+  const days = s.trainingDays.length ? s.trainingDays.map((d) => WEEKDAYS_ABBR[d]).join(', ') : 'Sin definir';
 
   return (
-    <Page title="Perfil">
-      <Section title="Tú">
-        <div className="panel">
-          <Field label="Nombre o alias">
-            <Input value={name} onChange={(e) => setName(e.target.value)} onBlur={() => name !== s.name && update({ name: name.trim() })} maxLength={40} placeholder="Opcional" />
-          </Field>
-          <div className="form-grid">
-            <Field label="Objetivo">
-              <Select value={s.goal} onChange={(v) => update({ goal: v })}>
-                <option value="">Sin especificar</option>
-                {GOALS.map((g) => (
-                  <option key={g}>{g}</option>
-                ))}
-              </Select>
-            </Field>
-            <Field label="Experiencia">
-              <Select value={s.experience} onChange={(v) => update({ experience: v as typeof s.experience })}>
-                <option value="">Sin especificar</option>
-                <option value="principiante">Principiante</option>
-                <option value="intermedio">Intermedio</option>
-                <option value="avanzado">Avanzado</option>
-              </Select>
-            </Field>
-          </div>
-        </div>
+    <Page
+      title="Perfil"
+      actions={
+        <IconButton label="Datos y copias de seguridad" onClick={() => navigate('/profile/data')}>
+          <Settings size={24} />
+        </IconButton>
+      }
+    >
+      <button
+        type="button"
+        className="profile-head"
+        onClick={() => {
+          setName(s.name);
+          setNameOpen(true);
+        }}
+        aria-label="Editar nombre"
+      >
+        <span className="avatar">{s.name ? s.name.trim()[0].toUpperCase() : <UserRound size={32} />}</span>
+        <span>
+          <span className="card-title" style={{ display: 'block', fontSize: 20 }}>
+            {s.name || 'Tu nombre'}
+          </span>
+          <span className="card-sub" style={{ display: 'block' }}>
+            Entrenando desde {since}
+          </span>
+        </span>
+      </button>
+
+      <Section>
+        <List>
+          <PickerRow icon={<Target size={20} />} title="Objetivo" value={s.goal} onChange={(v) => update({ goal: v })} options={[{ value: '', label: 'Sin especificar' }, ...GOALS.map((g) => ({ value: g, label: g }))]} />
+          <PickerRow
+            icon={<ChartNoAxesColumnIncreasing size={20} />}
+            title="Experiencia"
+            value={s.experience}
+            onChange={(v) => update({ experience: v })}
+            options={[
+              { value: '', label: 'Sin especificar' },
+              { value: 'principiante', label: 'Principiante' },
+              { value: 'intermedio', label: 'Intermedio' },
+              { value: 'avanzado', label: 'Avanzado' },
+            ]}
+          />
+          <Row icon={<CalendarDays size={20} />} title="Días de entrenamiento" value={days} onClick={() => setDaysOpen(true)} />
+          <PickerRow
+            icon={<CalendarCheck size={20} />}
+            title="Objetivo semanal"
+            value={String(s.weeklyGoal)}
+            onChange={(v) => update({ weeklyGoal: Number(v) })}
+            options={[1, 2, 3, 4, 5, 6, 7].map((n) => ({ value: String(n), label: `${n} ${n === 1 ? 'sesión' : 'sesiones'}` }))}
+          />
+        </List>
+      </Section>
+
+      <Section>
+        <List>
+          <Row icon={<ScaleIcon size={20} />} title="Peso objetivo" value={s.weightGoalKg != null ? fmtWeight(s.weightGoalKg) : s.weightGoalType ? { perder: 'Perder', ganar: 'Ganar', mantener: 'Mantener' }[s.weightGoalType] : 'Opcional'} onClick={() => navigate('/body/weight')} />
+          <Row icon={<Ruler size={20} />} title="Unidades" value={`${s.weightUnit}, ${s.lengthUnit}`} onClick={() => setUnitsOpen(true)} />
+          <PickerRow
+            icon={<SunMoon size={20} />}
+            title="Tema"
+            value={s.theme}
+            onChange={(v) => update({ theme: v })}
+            options={[
+              { value: 'auto', label: 'Sistema' },
+              { value: 'light', label: 'Claro' },
+              { value: 'dark', label: 'Oscuro' },
+            ]}
+          />
+          <PickerRow icon={<Globe size={20} />} title="Zona horaria" value={s.timezone} onChange={(v) => update({ timezone: v })} options={[...new Set([s.timezone, ...zones])].map((z) => ({ value: z, label: z }))} />
+        </List>
       </Section>
 
       <Section title="Entrenamiento">
-        <div className="panel">
-          <Field label="Días habituales de entrenamiento">
-            <div className="chips chips-wrap">
-              {WEEKDAYS.map((d, i) => {
-                const on = s.trainingDays.includes(i);
-                return (
-                  <button key={d} className={cx('chip', on && 'active')} aria-pressed={on} onClick={() => update({ trainingDays: on ? s.trainingDays.filter((x) => x !== i) : [...s.trainingDays, i].sort() })}>
-                    {d.slice(0, 3)}
-                  </button>
-                );
-              })}
-            </div>
-          </Field>
-          <Field label="Objetivo semanal de sesiones">
-            <Segmented label="Objetivo semanal" value={String(s.weeklyGoal)} onChange={(v) => update({ weeklyGoal: Number(v) })} options={[1, 2, 3, 4, 5, 6, 7].map((n) => ({ value: String(n), label: String(n) }))} />
-          </Field>
-          <Field label="Descanso predeterminado entre series">
-            <Select value={String(s.defaultRestSec)} onChange={(v) => update({ defaultRestSec: Number(v) })}>
-              {[30, 45, 60, 75, 90, 120, 150, 180, 240, 300].map((x) => (
-                <option key={x} value={x}>
-                  {fmtSeconds(x)}
-                </option>
-              ))}
-            </Select>
-          </Field>
-        </div>
-        <List className="mt">
+        <List>
+          <PickerRow
+            icon={<Timer size={20} />}
+            title="Descanso predeterminado"
+            value={String(s.defaultRestSec)}
+            onChange={(v) => update({ defaultRestSec: Number(v) })}
+            options={[30, 45, 60, 75, 90, 120, 150, 180, 240, 300].map((x) => ({ value: String(x), label: fmtSeconds(x) }))}
+          />
           <Toggle checked={s.autoStartRest} onChange={(v) => update({ autoStartRest: v })} label="Iniciar descanso al completar una serie" />
           <Toggle checked={s.restSound} onChange={(v) => update({ restSound: v })} label="Sonido al terminar el descanso" description="Sólo con la app abierta en pantalla." />
           <Toggle checked={s.restVibration} onChange={(v) => update({ restVibration: v })} label="Vibración al terminar el descanso" description="No disponible en iPhone (Safari no permite vibrar)." />
         </List>
       </Section>
 
-      <Section title="Revisión semanal">
+      <Section title="Revisión semanal" footer="De viernes a domingo se revisa la semana en curso; de lunes a jueves, la semana anterior.">
         <List>
-          <Toggle checked={s.reviewEnabled} onChange={(v) => update({ reviewEnabled: v })} label="Recordar la revisión en Inicio" description="Nunca bloquea el acceso al entrenamiento y se puede posponer." />
+          <Toggle checked={s.reviewEnabled} onChange={(v) => update({ reviewEnabled: v })} label="Recordar la revisión en Inicio" description="Nunca bloquea el entrenamiento y se puede posponer." />
+          <PickerRow icon={<ClipboardCheck size={20} />} title="Día de revisión" value={String(s.reviewDay)} onChange={(v) => update({ reviewDay: Number(v) })} options={WEEKDAYS.map((d, i) => ({ value: String(i), label: d[0].toUpperCase() + d.slice(1) }))} />
         </List>
-        <div className="panel mt">
-          <Field label="Día de revisión" hint="De viernes a domingo se revisa la semana en curso; de lunes a jueves, la semana anterior.">
-            <Select value={String(s.reviewDay)} onChange={(v) => update({ reviewDay: Number(v) })}>
-              {WEEKDAYS.map((d, i) => (
-                <option key={d} value={i}>
-                  {d}
-                </option>
-              ))}
-            </Select>
-          </Field>
-        </div>
-      </Section>
-
-      <Section title="Unidades y región">
-        <div className="panel">
-          <div className="form-grid">
-            <Field label="Peso">
-              <Segmented label="Unidad de peso" value={s.weightUnit} onChange={(v) => update({ weightUnit: v })} options={[{ value: 'kg', label: 'kg' }, { value: 'lb', label: 'lb' }]} />
-            </Field>
-            <Field label="Longitud">
-              <Segmented label="Unidad de longitud" value={s.lengthUnit} onChange={(v) => update({ lengthUnit: v })} options={[{ value: 'cm', label: 'cm' }, { value: 'in', label: 'in' }]} />
-            </Field>
-          </div>
-          <Field label="Zona horaria" hint={`Del dispositivo: ${deviceTimezone()}. Define qué día cuenta cada entrenamiento.`}>
-            <Select value={s.timezone} onChange={(v) => update({ timezone: v })}>
-              {!zones.includes(s.timezone) && <option>{s.timezone}</option>}
-              {zones.map((z) => (
-                <option key={z}>{z}</option>
-              ))}
-            </Select>
-          </Field>
-        </div>
-      </Section>
-
-      <Section title="Apariencia">
-        <Segmented label="Tema" value={s.theme} onChange={(v) => update({ theme: v })} options={[{ value: 'auto', label: 'Automático' }, { value: 'light', label: 'Claro' }, { value: 'dark', label: 'Oscuro' }]} />
       </Section>
 
       <Section title="Datos y privacidad">
         <List>
-          <Row icon={<Database size={20} />} title="Exportar, importar y borrar datos" onClick={() => navigate('/profile/data')} />
+          <Row icon={<Download size={20} />} title="Exportar datos" onClick={() => navigate('/profile/data')} />
+          <Row icon={<Upload size={20} />} title="Importar datos" onClick={() => navigate('/profile/data')} />
+          <Row icon={<Trash2 size={20} />} title="Eliminar datos" onClick={() => navigate('/profile/data')} />
           <Row icon={<ShieldCheck size={20} />} title="Privacidad y almacenamiento" onClick={() => navigate('/profile/about')} />
         </List>
       </Section>
@@ -136,6 +135,47 @@ export function Profile() {
       <p className="tiny muted mt-lg" style={{ textAlign: 'center' }}>
         DRAXIVO · gratuito, sin anuncios ni suscripciones
       </p>
+
+      <Sheet
+        open={nameOpen}
+        onClose={() => setNameOpen(false)}
+        title="Nombre o alias"
+        action={{
+          label: 'Guardar',
+          onClick: async () => {
+            await update({ name: name.trim() });
+            setNameOpen(false);
+          },
+        }}
+      >
+        <Field label="Nombre o alias (opcional)">
+          <Input value={name} onChange={(e) => setName(e.target.value)} maxLength={40} placeholder="Cómo quieres que te llamemos" data-autofocus />
+        </Field>
+      </Sheet>
+
+      <Sheet open={daysOpen} onClose={() => setDaysOpen(false)} title="Días de entrenamiento">
+        <p className="small muted">Elige los días en los que sueles entrenar. Sólo se usa como referencia en la planificación.</p>
+        <div className="chips chips-wrap mt">
+          {WEEKDAYS.map((d, i) => {
+            const on = s.trainingDays.includes(i);
+            return (
+              <button key={d} className={cx('chip', on && 'active')} aria-pressed={on} onClick={() => update({ trainingDays: on ? s.trainingDays.filter((x) => x !== i) : [...s.trainingDays, i].sort() })}>
+                {d[0].toUpperCase() + d.slice(1)}
+              </button>
+            );
+          })}
+        </div>
+      </Sheet>
+
+      <Sheet open={unitsOpen} onClose={() => setUnitsOpen(false)} title="Unidades">
+        <Field label="Peso">
+          <Segmented label="Unidad de peso" value={s.weightUnit} onChange={(v) => update({ weightUnit: v })} options={[{ value: 'kg', label: 'Kilogramos' }, { value: 'lb', label: 'Libras' }]} />
+        </Field>
+        <Field label="Longitud">
+          <Segmented label="Unidad de longitud" value={s.lengthUnit} onChange={(v) => update({ lengthUnit: v })} options={[{ value: 'cm', label: 'Centímetros' }, { value: 'in', label: 'Pulgadas' }]} />
+        </Field>
+        <p className="small muted">Los datos se guardan siempre en kg y cm; sólo cambia cómo se muestran.</p>
+      </Sheet>
     </Page>
   );
 }

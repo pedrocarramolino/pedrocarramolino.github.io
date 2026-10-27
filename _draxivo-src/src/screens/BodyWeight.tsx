@@ -18,7 +18,7 @@ export function BodyWeightScreen() {
   const confirm = useConfirm();
   const entries = useQuery(listBodyWeights, ['bodyweights']);
   const [sheet, setSheet] = useState<{ entry: BodyWeight | null } | null>(null);
-  const [period, setPeriod] = useState<PeriodKey>('90');
+  const [period, setPeriod] = useState<PeriodKey>('30');
   const [custom, setCustom] = useState({ from: '', to: '' });
   const [goalOpen, setGoalOpen] = useState(false);
   const [goalType, setGoalType] = useState(settings.weightGoalType ?? 'mantener');

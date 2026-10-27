@@ -2,12 +2,13 @@ import { useMemo, useState } from 'react';
 import { Check, Plus, Search } from 'lucide-react';
 import type { Equipment, Exercise, MovementType, MuscleGroup, TrackingType } from '../db/types';
 import { useQuery } from '../app/hooks';
-import { getActiveWorkout, listExercises, listRoutines, listWorkouts, saveBodyWeight, saveExercise, startWorkout } from '../db/repo';
-import { Button, Field, Input, Select, Sheet, TextArea, cx, NumberInput, useConfirm } from '../ui/kit';
+import { getActiveWorkout, listBodyWeights, listExercises, listRoutines, listWorkouts, saveBodyWeight, saveExercise, startWorkout } from '../db/repo';
+import { Button, DateInput, Field, Input, Select, Sheet, TextArea, WheelPicker, cx, NumberInput, useConfirm } from '../ui/kit';
+import { ExerciseArt } from '../ui/ExerciseArt';
 import { EQUIPMENT, MOVEMENTS, MUSCLES, TRACKING } from '../lib/labels';
 import { useToast, useSettings } from '../app/context';
 import { navigate } from '../app/router';
-import { fromDisplayWeight, toDisplayWeight, wUnit } from '../lib/units';
+import { fromDisplayWeight, num, toDisplayWeight, wUnit } from '../lib/units';
 import { dateKey, timeKey, today } from '../lib/dates';
 import type { BodyWeight } from '../db/types';
 
@@ -102,23 +103,16 @@ export function ExercisePicker({
           <Search size={18} />
           <Input type="search" placeholder="Buscar ejercicio" value={q} onChange={(e) => setQ(e.target.value)} aria-label="Buscar ejercicio" />
         </div>
-        <div className="form-grid">
-          <Select value={muscle} onChange={(v) => setMuscle(v as MuscleGroup | '')} aria-label="Grupo muscular">
-            <option value="">Todos los músculos</option>
-            {Object.entries(MUSCLES).map(([k, v]) => (
-              <option key={k} value={k}>
-                {v}
-              </option>
-            ))}
-          </Select>
-          <Select value={equip} onChange={(v) => setEquip(v as Equipment | '')} aria-label="Equipamiento">
-            <option value="">Todo el equipamiento</option>
-            {Object.entries(EQUIPMENT).map(([k, v]) => (
-              <option key={k} value={k}>
-                {v}
-              </option>
-            ))}
-          </Select>
+        <MuscleChips value={muscle} onChange={setMuscle} />
+        <div className="chips">
+          <button type="button" className={cx('chip', !equip && 'active')} onClick={() => setEquip('')}>
+            Todo el equipo
+          </button>
+          {(Object.keys(EQUIPMENT) as Equipment[]).map((k) => (
+            <button key={k} type="button" className={cx('chip', equip === k && 'active')} aria-pressed={equip === k} onClick={() => setEquip(equip === k ? '' : k)}>
+              {EQUIPMENT[k]}
+            </button>
+          ))}
         </div>
         <Button variant="plain" icon={<Plus size={18} />} onClick={() => setCreating(true)} className="mt">
           Crear ejercicio personalizado
@@ -134,6 +128,7 @@ export function ExercisePicker({
                 aria-pressed={multi ? on : undefined}
                 onClick={() => (multi ? setSel((s) => (on ? s.filter((x) => x !== e.id) : [...s, e.id])) : done([e.id]))}
               >
+                <ExerciseArt exercise={e} size={52} />
                 <span className="row-main">
                   <span className="row-title">{e.name}</span>
                   <span className="row-subtitle">
@@ -141,7 +136,7 @@ export function ExercisePicker({
                     {e.custom ? ' · Personalizado' : ''}
                   </span>
                 </span>
-                {multi && <span className={cx('check-btn', on && 'on')}>{on && <Check size={18} />}</span>}
+                {multi && <span className={cx('check-btn picker-check', on && 'on')}>{on && <Check size={16} strokeWidth={3} />}</span>}
               </button>
             );
           })}
@@ -299,18 +294,22 @@ export function ExerciseForm({
 export function WeightSheet({ open, onClose, entry }: { open: boolean; onClose: () => void; entry?: BodyWeight | null }) {
   const toast = useToast();
   const { settings } = useSettings();
+  const all = useQuery(listBodyWeights, ['bodyweights']);
   const [key, setKey] = useState<string | null>(null);
   const [date, setDate] = useState(today());
   const [time, setTime] = useState('');
   const [value, setValue] = useState<number | null>(null);
   const [note, setNote] = useState('');
+  const [typing, setTyping] = useState(false);
   const k = `${open}-${entry?.id ?? 'new'}`;
-  if (open && key !== k) {
+  if (open && key !== k && all) {
     setKey(k);
+    const last = all[all.length - 1];
     setDate(entry?.date ?? today());
     setTime(entry?.time ?? (entry ? '' : timeKey()));
-    setValue(entry ? toDisplayWeight(entry.weightKg) : null);
+    setValue(entry ? toDisplayWeight(entry.weightKg) : last ? toDisplayWeight(last.weightKg) : settings.weightUnit === 'kg' ? 70 : 155);
     setNote(entry?.note ?? '');
+    setTyping(false);
   }
   if (!open && key !== null) setKey(null);
   const save = async () => {
@@ -323,34 +322,61 @@ export function WeightSheet({ open, onClose, entry }: { open: boolean; onClose: 
       toast((e as Error).message, { tone: 'error' });
     }
   };
+  const center = value ?? 70;
+  const span = settings.weightUnit === 'kg' ? 25 : 50;
+  const min = Math.max(20, Math.floor(center - span));
+  const max = Math.min(400, Math.ceil(center + span));
   return (
     <Sheet
       open={open}
       onClose={onClose}
-      title={entry ? 'Editar registro de peso' : 'Registrar peso'}
-      footer={
-        <>
-          <Button onClick={onClose}>Cancelar</Button>
-          <Button variant="primary" onClick={save} disabled={value == null || value <= 0 || date > dateKey()}>
-            Guardar
-          </Button>
-        </>
-      }
+      title={entry ? 'Editar peso' : 'Registrar peso'}
+      action={{ label: 'Guardar', onClick: save, disabled: value == null || value <= 0 || date > dateKey() }}
     >
-      <Field label={`Peso (${wUnit()})`}>
-        <NumberInput value={value} onChange={setValue} placeholder={settings.weightUnit === 'kg' ? '72,5' : '160'} ariaLabel="Peso corporal" className="input-lg" />
-      </Field>
-      <div className="form-grid">
+      <div className="big-value">
+        {typing ? (
+          <div style={{ maxWidth: 200, margin: '0 auto' }}>
+            <NumberInput value={value} onChange={setValue} ariaLabel="Peso corporal" className="input-lg" />
+          </div>
+        ) : (
+          <button type="button" className="big-value-btn" onClick={() => setTyping(true)} aria-label={`Peso ${value ?? ''} ${wUnit()}. Pulsa para escribirlo`}>
+            <span className="hero-number">{value != null ? num(value, 1) : '—'}</span>
+            <span className="hero-unit">{wUnit()}</span>
+          </button>
+        )}
+        <div className="small muted" style={{ marginTop: 4 }}>
+          Desliza la rueda o toca la cifra para escribirla
+        </div>
+      </div>
+      {!typing && value != null && <WheelPicker value={value} onChange={setValue} min={min} max={max} step={0.1} format={(v) => num(v, 1)} label="Peso corporal" />}
+      <div className="form-grid mt">
         <Field label="Fecha" error={date > dateKey() ? 'No puede ser una fecha futura.' : undefined}>
-          <Input type="date" value={date} max={today()} onChange={(e) => setDate(e.target.value)} />
+          <DateInput value={date} max={today()} onChange={setDate} label="Fecha" />
         </Field>
         <Field label="Hora (opcional)">
           <Input type="time" value={time} onChange={(e) => setTime(e.target.value)} />
         </Field>
       </div>
       <Field label="Nota (opcional)">
-        <Input value={note} onChange={(e) => setNote(e.target.value)} maxLength={200} placeholder="Ej.: en ayunas" />
+        <Input value={note} onChange={(e) => setNote(e.target.value)} maxLength={200} placeholder="Cómo te sientes, cambios, etc." />
       </Field>
     </Sheet>
+  );
+}
+
+/** Filtros por grupo muscular en forma de chips desplazables. */
+export function MuscleChips({ value, onChange, only }: { value: MuscleGroup | ''; onChange: (m: MuscleGroup | '') => void; only?: MuscleGroup[] }) {
+  const list = only ?? (Object.keys(MUSCLES) as MuscleGroup[]);
+  return (
+    <div className="chips" role="group" aria-label="Filtrar por grupo muscular">
+      <button type="button" className={cx('chip', !value && 'active')} aria-pressed={!value} onClick={() => onChange('')}>
+        Todos
+      </button>
+      {list.map((m) => (
+        <button key={m} type="button" className={cx('chip', value === m && 'active')} aria-pressed={value === m} onClick={() => onChange(value === m ? '' : m)}>
+          {MUSCLES[m]}
+        </button>
+      ))}
+    </div>
   );
 }

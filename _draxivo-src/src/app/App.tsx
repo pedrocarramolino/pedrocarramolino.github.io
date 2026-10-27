@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react';
-import { ChartLine, Dumbbell, House, ListChecks, UserRound } from 'lucide-react';
+import { ChartColumn, ClipboardList, Dumbbell, House, UserRound } from 'lucide-react';
 import type { Settings } from '../db/types';
-import { ConfirmProvider, LogoMark, Wordmark, cx } from '../ui/kit';
+import { ConfirmProvider, cx } from '../ui/kit';
 import { SettingsProvider, ToastProvider, useSettings } from './context';
 import { navigate, useRoute } from './router';
 import { useQuery, useTick } from './hooks';
@@ -31,8 +31,8 @@ import { Onboarding } from '../screens/Onboarding';
 const TABS = [
   { id: 'home', label: 'Inicio', path: '/', icon: House },
   { id: 'train', label: 'Entrenar', path: '/train', icon: Dumbbell },
-  { id: 'routines', label: 'Rutinas', path: '/routines', icon: ListChecks },
-  { id: 'progress', label: 'Progreso', path: '/progress', icon: ChartLine },
+  { id: 'routines', label: 'Rutinas', path: '/routines', icon: ClipboardList },
+  { id: 'progress', label: 'Progreso', path: '/progress', icon: ChartColumn },
   { id: 'profile', label: 'Perfil', path: '/profile', icon: UserRound },
 ] as const;
 
@@ -137,34 +137,22 @@ function UpdateBanner() {
 
 function Shell() {
   const { settings } = useSettings();
-  const { segments } = useRoute();
+  const { segments, path } = useRoute();
   const tab = tabFor(segments[0]);
   const fullscreen = segments[0] === 'workout' || (segments[0] === 'history' && segments[2] === 'edit');
   const active = useQuery(getActiveWorkout, ['workouts']);
   if (!settings.onboarded) return <Onboarding />;
   return (
     <div className="app">
-      <nav className="sidebar" aria-label="Navegación principal">
-        <Wordmark />
-        {TABS.map((t) => (
-          <a key={t.id} href={`#${t.path}`} className={cx('side-link', tab === t.id && 'active')} aria-current={tab === t.id ? 'page' : undefined}>
-            <t.icon size={20} />
-            {t.label}
-          </a>
-        ))}
-        <div className="side-foot">
-          <LogoMark size={16} /> Train with purpose
-        </div>
-      </nav>
       <main className={cx('main', fullscreen ? 'no-tabs' : active && 'has-mini')}>
-        <Screen />
+        <Screen key={path} />
       </main>
       {!fullscreen && <MiniWorkout />}
       {!fullscreen && (
         <nav className="tabbar" aria-label="Navegación principal">
           {TABS.map((t) => (
             <a key={t.id} href={`#${t.path}`} className={cx('tab', tab === t.id && 'active')} aria-current={tab === t.id ? 'page' : undefined}>
-              <t.icon size={24} strokeWidth={tab === t.id ? 2.2 : 1.8} />
+              <t.icon size={24} strokeWidth={tab === t.id ? 2.3 : 1.7} />
               <span>{t.label}</span>
             </a>
           ))}

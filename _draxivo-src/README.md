@@ -18,6 +18,14 @@
 - **Datos**: copia JSON completa (fotos opcionales), CSV por tipo de dato, importación validada, atómica y sin duplicados, borrado total.
 - **PWA**: instalable, funciona sin conexión, avisa de nuevas versiones.
 
+## Diseño
+
+Interfaz de app nativa para iPhone: fondo gris muy claro, tarjetas blancas, texto carbón y acentos azul grisáceo; tema oscuro equivalente. Columna de ancho móvil (máx. 480 px) también en escritorio, barra inferior fija con Inicio, Entrenar, Rutinas, Progreso y Perfil.
+
+- Sin controles nativos del navegador: los desplegables se sustituyen por hojas inferiores (`Select`, `PickerRow`), las fechas por un calendario propio (`DateInput`) y el peso se elige con un selector en rueda (`WheelPicker`).
+- Ilustraciones SVG locales y consistentes para cada ejercicio (`src/ui/ExerciseArt.tsx`), dibujadas con primitivas comunes y colores del tema. Sin imágenes externas.
+- Entrenamiento activo en modo «un ejercicio por pantalla» (las superseries se muestran juntas), con vista de lista opcional, tarjeta de descanso con temporizador circular y botones fijos «Añadir serie» y «Completar serie».
+
 ## Desarrollo
 
 ```bash
@@ -27,9 +35,23 @@ npm test           # pruebas unitarias (Vitest + fake-indexeddb)
 npm run build      # comprobación de tipos + build en dist/
 npm run e2e        # pruebas end-to-end con Playwright sobre el build
 npm run icons      # regenera los iconos PNG desde el SVG
+npm run shots      # capturas de revisión visual con datos de ejemplo (añade «oscuro» para el tema oscuro)
 ```
 
 ## Publicación
+
+### Vercel
+
+El proyecto incluye `vercel.json` (Vite, `npm ci`, `npm run build`, salida `dist/`, cabeceras de caché para el service worker y los recursos con hash, y reescritura de rutas a `index.html`).
+
+1. En Vercel: **Add New → Project** e importa el repositorio `pedrocarramolino/pedrocarramolino.github.io`.
+2. En **Root Directory** elige `_draxivo-src`.
+3. Deja el resto como lo detecta `vercel.json` y pulsa **Deploy**.
+4. Dominio propio (opcional): **Settings → Domains → Add** y crea en tu proveedor DNS el registro que indique Vercel (normalmente `CNAME` a `cname.vercel-dns.com` para un subdominio, o `A` a `76.76.21.21` para el dominio raíz).
+
+**Variables de entorno:** ninguna. La aplicación no usa backend ni claves; todos los datos se guardan en el navegador.
+
+### GitHub Pages
 
 `dist/` es un sitio estático con rutas relativas (`base: './'`) y enrutado por hash, así que funciona en cualquier subcarpeta de cualquier alojamiento estático (GitHub Pages, Netlify, Vercel, Cloudflare Pages) sin reescrituras. Para GitHub Pages basta con copiar el contenido de `dist/` en la carpeta publicada.
 

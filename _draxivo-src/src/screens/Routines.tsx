@@ -1,6 +1,8 @@
 import { useMemo, useState } from 'react';
 import { Archive, Copy, Ellipsis, Folder, FolderPlus, ListChecks, Pencil, Play, Plus, Search, Trash2 } from 'lucide-react';
-import type { Routine } from '../db/types';
+import type { Exercise, MuscleGroup, Routine } from '../db/types';
+import { MUSCLES } from '../lib/labels';
+import { ExerciseArt } from '../ui/ExerciseArt';
 import { useQuery } from '../app/hooks';
 import { navigate } from '../app/router';
 import { useSettings, useToast } from '../app/context';
@@ -8,7 +10,7 @@ import { deleteFolder, deleteRoutine, duplicateRoutine, estimateRoutineMinutes, 
 import { BUILTIN_TEMPLATES, routineFromTemplate } from '../db/templates';
 import { fmtMinutes } from '../lib/dates';
 import { ActionMenu, Button, Empty, Field, IconButton, Input, List, Loading, Page, Row, Section, Sheet, Tag, useConfirm } from '../ui/kit';
-import { normalize, useExercises, useRoutines, useStartWorkout } from './shared';
+import { MuscleChips, normalize, useExercises, useRoutines, useStartWorkout } from './shared';
 
 export function useRoutineActions() {
   const toast = useToast();
@@ -65,7 +67,7 @@ export function Routines() {
   const folders = useQuery(listFolders, ['folders']);
   const exercises = useExercises(true);
   const [q, setQ] = useState('');
-  const [cat, setCat] = useState('');
+  const [cat, setCat] = useState<MuscleGroup | ''>('');
   const [showArchived, setShowArchived] = useState(false);
   const [menu, setMenu] = useState<Routine | null>(null);
   const [folderEdit, setFolderEdit] = useState<{ id?: string; name: string } | null>(null);
@@ -73,48 +75,54 @@ export function Routines() {
   const [tplOpen, setTplOpen] = useState(false);
   const { actions, moveSheet } = useRoutineActions();
 
+  const exMap = useMemo(() => new Map((exercises ?? []).map((e) => [e.id, e])), [exercises]);
   const filtered = useMemo(() => {
     const nq = normalize(q.trim());
-    return (routines ?? []).filter((r) => (!nq || normalize(r.name).includes(nq) || normalize(r.description).includes(nq)) && (!cat || r.category === cat));
-  }, [routines, q, cat]);
+    return (routines ?? []).filter(
+      (r) =>
+        (!nq || normalize(r.name).includes(nq) || normalize(r.description).includes(nq)) &&
+        (!cat || r.exercises.some((e) => {
+          const x = exMap.get(e.exerciseId);
+          return x && (x.primaryMuscle === cat || x.secondaryMuscles.includes(cat));
+        })),
+    );
+  }, [routines, q, cat, exMap]);
 
   if (!routines || !folders || !exercises) return <Loading />;
   const active = filtered.filter((r) => !r.archived && !r.isTemplate);
   const templates = filtered.filter((r) => r.isTemplate && !r.archived);
   const archived = filtered.filter((r) => r.archived);
-  const categories = [...new Set(routines.map((r) => r.category).filter(Boolean))];
-  const exName = new Map(exercises.map((e) => [e.id, e.name]));
+  const usedMuscles = (Object.keys(MUSCLES) as MuscleGroup[]).filter((m) => routines.some((r) => r.exercises.some((e) => exMap.get(e.exerciseId)?.primaryMuscle === m)));
 
-  const routineRow = (r: Routine) => (
-    <Row
-      key={r.id}
-      title={
-        <span>
-          {r.name} {r.variantOf && <Tag>Variante</Tag>}
-        </span>
-      }
-      subtitle={
-        r.exercises.length
-          ? `${r.exercises.length} ejercicios · ~${fmtMinutes(r.estimatedMin ?? estimateRoutineMinutes(r, settings.defaultRestSec))} · ${r.exercises
-              .slice(0, 3)
-              .map((e) => exName.get(e.exerciseId) ?? '?')
-              .join(', ')}${r.exercises.length > 3 ? '…' : ''}`
-          : 'Sin ejercicios'
-      }
-      onClick={() => navigate(`/routines/${r.id}`)}
-      chevron={false}
-    >
-      <IconButton
-        label={`Opciones de ${r.name}`}
-        onClick={(e) => {
-          e.stopPropagation();
-          setMenu(r);
-        }}
-      >
-        <Ellipsis size={20} />
-      </IconButton>
-    </Row>
-  );
+  const routineRow = (r: Routine) => {
+    const exs = r.exercises.map((e) => exMap.get(e.exerciseId)).filter(Boolean) as Exercise[];
+    return (
+      <div key={r.id} className="card routine-card">
+        <button type="button" className="routine-main" onClick={() => navigate(`/routines/${r.id}`)} aria-label={`${r.name}, ${r.exercises.length} ejercicios`}>
+          <ExerciseArt exercise={exs[0]} size={60} />
+          <span className="grow">
+            <span className="card-title" style={{ display: 'block', fontSize: 16 }}>
+              {r.name} {r.variantOf && <Tag>Variante</Tag>}
+            </span>
+            <span className="card-sub" style={{ display: 'block' }}>
+              {r.exercises.length ? `${r.exercises.length} ejercicios · ≈ ${fmtMinutes(r.estimatedMin ?? estimateRoutineMinutes(r, settings.defaultRestSec))}` : 'Sin ejercicios'}
+            </span>
+            {exs.length > 1 && (
+              <span className="thumbs" style={{ marginTop: 6 }}>
+                {exs.slice(1, 5).map((e, i) => (
+                  <ExerciseArt key={i} exercise={e} size={30} />
+                ))}
+                {exs.length > 5 && <span className="tiny muted" style={{ alignSelf: 'center' }}>+{exs.length - 5}</span>}
+              </span>
+            )}
+          </span>
+        </button>
+        <IconButton label={`Opciones de ${r.name}`} onClick={() => setMenu(r)}>
+          <Ellipsis size={20} />
+        </IconButton>
+      </div>
+    );
+  };
 
   const byFolder = (fid: string | null) => active.filter((r) => (r.folderId ?? null) === fid);
   const timedIds = new Set(exercises.filter((e) => e.tracking === 'duration' || e.tracking === 'distance_duration').map((e) => e.id));
@@ -127,8 +135,8 @@ export function Routines() {
           <IconButton label="Nueva carpeta" onClick={() => setFolderEdit({ name: '' })}>
             <FolderPlus size={22} />
           </IconButton>
-          <IconButton label="Nueva rutina" onClick={() => navigate('/routines/new')}>
-            <Plus size={24} />
+          <IconButton label="Nueva rutina" className="icon-btn-solid" onClick={() => navigate('/routines/new')}>
+            <Plus size={22} />
           </IconButton>
         </>
       }
@@ -137,18 +145,7 @@ export function Routines() {
         <Search size={18} />
         <Input type="search" placeholder="Buscar rutinas" value={q} onChange={(e) => setQ(e.target.value)} aria-label="Buscar rutinas" />
       </div>
-      {categories.length > 0 && (
-        <div className="chips">
-          <button className={`chip ${!cat ? 'active' : ''}`} onClick={() => setCat('')}>
-            Todas
-          </button>
-          {categories.map((c) => (
-            <button key={c} className={`chip ${cat === c ? 'active' : ''}`} onClick={() => setCat(cat === c ? '' : c)}>
-              {c}
-            </button>
-          ))}
-        </div>
-      )}
+      {usedMuscles.length > 0 && <MuscleChips value={cat} onChange={setCat} only={usedMuscles} />}
 
       <div className="btn-row mt">
         <Button variant="tinted" icon={<Plus size={18} />} onClick={() => navigate('/routines/new')}>
@@ -182,26 +179,26 @@ export function Routines() {
               </IconButton>
             }
           >
-            {list.length ? <List>{list.map(routineRow)}</List> : <p className="small muted" style={{ padding: '0 4px' }}>Carpeta vacía. Usa «Mover a carpeta» en una rutina.</p>}
+            {list.length ? <div>{list.map(routineRow)}</div> : <p className="small muted" style={{ padding: '0 4px' }}>Carpeta vacía. Usa «Mover a carpeta» en una rutina.</p>}
           </Section>
         );
       })}
 
       {byFolder(null).length > 0 && (
         <Section title={folders.length ? 'Sin carpeta' : 'Mis rutinas'}>
-          <List>{byFolder(null).map(routineRow)}</List>
+          <div>{byFolder(null).map(routineRow)}</div>
         </Section>
       )}
 
       {routines.length > 0 && !active.length && q && <p className="muted mt">No hay rutinas que coincidan.</p>}
 
       <Section title="Plantillas" action={<button className="link" onClick={() => setTplOpen(true)}>Incluidas</button>}>
-        {templates.length ? <List>{templates.map(routineRow)}</List> : <p className="small muted" style={{ padding: '0 4px' }}>Guarda cualquier rutina como plantilla para reutilizarla, o usa una de las incluidas.</p>}
+        {templates.length ? <div>{templates.map(routineRow)}</div> : <p className="small muted" style={{ padding: '0 4px' }}>Guarda cualquier rutina como plantilla para reutilizarla, o usa una de las incluidas.</p>}
       </Section>
 
       {archived.length > 0 && (
         <Section title={`Archivadas · ${archived.length}`} action={<button className="link" onClick={() => setShowArchived((s) => !s)}>{showArchived ? 'Ocultar' : 'Mostrar'}</button>}>
-          {showArchived && <List>{archived.map(routineRow)}</List>}
+          {showArchived && <div>{archived.map(routineRow)}</div>}
         </Section>
       )}
 

@@ -8,7 +8,7 @@ import { deleteWorkout, emptyRoutine, getWorkout, newPlannedSet, saveRoutine } f
 import { compareWorkouts, prsInWorkout, PR_LABELS, workoutStats } from '../domain/metrics';
 import { addDays, addMonths, daysInMonth, fmtDate, fmtDateLong, fmtDuration, fmtMinutes, fmtMonth, monthStart, timeKey, today, WEEKDAYS_SHORT, weekday } from '../lib/dates';
 import { fmtVolume } from '../lib/units';
-import { ActionMenu, Button, Empty, Field, IconButton, Input, List, Loading, Page, Row, Section, Segmented, Select, Stat, cx, useConfirm } from '../ui/kit';
+import { DateInput, ActionMenu, Button, Empty, Field, IconButton, Input, List, Loading, Page, Row, Section, Segmented, Select, Stat, cx, useConfirm } from '../ui/kit';
 import { normalize, useExercises, useRoutines, useWorkouts } from './shared';
 import { WorkoutBreakdown, fmtPR } from './WorkoutSummary';
 import { uid } from '../lib/id';
@@ -153,10 +153,10 @@ export function History() {
               </Select>
             </Field>
             <Field label="Desde">
-              <Input type="date" value={from} onChange={(e) => setFrom(e.target.value)} />
+              <DateInput value={from} onChange={setFrom} clearable placeholder="Cualquiera" label="Desde" />
             </Field>
             <Field label="Hasta">
-              <Input type="date" value={to} onChange={(e) => setTo(e.target.value)} />
+              <DateInput value={to} onChange={setTo} clearable placeholder="Cualquiera" label="Hasta" />
             </Field>
           </div>
           {anyFilter && (

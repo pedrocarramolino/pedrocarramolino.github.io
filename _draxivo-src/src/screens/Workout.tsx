@@ -1,17 +1,18 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { Check, ChevronDown, Ellipsis, Link2, Pause, Play, Plus, RotateCcw, SkipForward, StickyNote, Timer, Trash2 } from 'lucide-react';
-import type { EffortMetric, SetType, Workout, WorkoutExercise, WorkoutSet } from '../db/types';
+import { Check, ChevronDown, ChevronLeft, ChevronRight, Clock3, Ellipsis, Flag, Link2, Pause, Play, Plus, RotateCcw, SkipForward, StickyNote, Timer, Trash2, TrendingUp } from 'lucide-react';
+import type { EffortMetric, Exercise, SetType, Workout, WorkoutExercise, WorkoutSet } from '../db/types';
 import { deleteWorkout, finishWorkout, getActiveWorkout, getWorkout, newWorkoutSet, saveWorkout, workoutExerciseFrom } from '../db/repo';
 import { useSettings, useToast } from '../app/context';
 import { useTick } from '../app/hooks';
 import { goBack, navigate } from '../app/router';
 import { lastPerformance, workoutDurationMs, workoutStats } from '../domain/metrics';
-import { dateKey, fmtDuration, fmtSeconds, localToMs, timeKey } from '../lib/dates';
-import { SET_TYPES, usesDistance, usesDuration, usesReps, usesWeight, weightColumnLabel } from '../lib/labels';
+import { dateKey, fmtDuration, fmtSeconds, localToMs, timeKey, today } from '../lib/dates';
+import { EQUIPMENT, MUSCLES, SET_TYPES, usesDistance, usesDuration, usesReps, usesWeight, weightColumnLabel } from '../lib/labels';
 import { fmtVolume, fmtWeightNum, fromDisplayWeight, toDisplayWeight, wUnit } from '../lib/units';
-import { ActionMenu, Button, Empty, Field, IconButton, Input, Loading, NumberInput, Sheet, TextArea, cx, useConfirm, type MenuAction } from '../ui/kit';
+import { DateInput, ActionMenu, Button, Card, Empty, Field, IconButton, Input, Loading, NumberInput, Progress, Sheet, TextArea, cx, useConfirm, type MenuAction } from '../ui/kit';
+import { ExerciseArt } from '../ui/ExerciseArt';
 import { ReorderList } from '../ui/reorder';
-import { ExercisePicker, useStartWorkout, useWorkouts } from './shared';
+import { ExercisePicker, useExerciseMap, useStartWorkout, useWorkouts } from './shared';
 import { uid } from '../lib/id';
 
 // ---------- Sonido y vibración del descanso ----------
@@ -79,6 +80,10 @@ export function WorkoutScreen({ editId }: { editId?: string }) {
   const [workoutMenu, setWorkoutMenu] = useState(false);
   const [showNotes, setShowNotes] = useState<Record<string, boolean>>({});
   const [editMeta, setEditMeta] = useState(false);
+  const [view, setView] = useState<'focus' | 'list'>('focus');
+  const [blockIdx, setBlockIdx] = useState<number | null>(null);
+  const [listOpen, setListOpen] = useState(false);
+  const exMap = useExerciseMap();
 
   // Carga (y recuperación de una sesión interrumpida).
   useEffect(() => {
@@ -322,38 +327,101 @@ export function WorkoutScreen({ editId }: { editId?: string }) {
       ]
     : [];
 
+  // Bloques: ejercicios consecutivos de una superserie se muestran juntos.
+  const blocks: WorkoutExercise[][] = [];
+  for (const e of w.exercises) {
+    const last = blocks[blocks.length - 1];
+    if (last && e.supersetId && last[0].supersetId === e.supersetId) last.push(e);
+    else blocks.push([e]);
+  }
+  const firstOpen = Math.max(0, blocks.findIndex((bl) => bl.some((e) => e.sets.some((x) => !x.completed))));
+  const bi = Math.min(blockIdx ?? firstOpen, Math.max(0, blocks.length - 1));
+  const block = blocks[bi] ?? [];
+  const nextBlock = blocks[bi + 1];
+  const totalSets = w.exercises.reduce((n, e) => n + e.sets.length, 0);
+  const exNumber = block.length ? w.exercises.indexOf(block[0]) + 1 : 0;
+  // Siguiente serie pendiente del bloque (en superseries, alterna entre ejercicios).
+  const pending = (() => {
+    let best: { ex: WorkoutExercise; s: WorkoutSet; done: number } | null = null;
+    for (const e of block) {
+      const s2 = e.sets.find((x) => !x.completed);
+      if (!s2) continue;
+      const done = e.sets.filter((x) => x.completed).length;
+      if (!best || done < best.done) best = { ex: e, s: s2, done };
+    }
+    return best;
+  })();
+  const shown = view === 'list' ? w.exercises : block;
+  const goBlock = (i: number) => {
+    setBlockIdx(i);
+    window.scrollTo({ top: 0, behavior: 'smooth' });
+  };
+  const restRemaining = !editing && w.rest ? remaining : null;
+
+  const renderCard = (ex: WorkoutExercise) => {
+    const i = w.exercises.indexOf(ex);
+    return (
+      <ExerciseCard
+        key={ex.id}
+        ex={ex}
+        info={exMap.get(ex.exerciseId)}
+        prev={prevByExercise.get(ex.exerciseId)}
+        supersetWithNext={!!ex.supersetId && w.exercises[i + 1]?.supersetId === ex.supersetId}
+        showNotes={!!showNotes[ex.id] || !!ex.notes}
+        nextSetId={pending?.ex.id === ex.id ? pending.s.id : null}
+        onMenu={() => setMenuEx(ex.id)}
+        onNotes={(notes) => updateEx(ex.id, (e) => ({ ...e, notes }))}
+        onToggle={(s2) => toggleSet(ex, s2)}
+        onChange={(setId, p2) => updateSet(ex.id, setId, p2)}
+        onSetMenu={(setId) => setSetMenu({ exId: ex.id, setId })}
+        onAddSet={() => addSet(ex)}
+        onRest={() => setRestEdit(ex.id)}
+        onCopyPrev={(sets) => updateEx(ex.id, (e) => ({ ...e, sets }))}
+        defaultRest={settings.defaultRestSec}
+      />
+    );
+  };
+
   return (
     <div>
-      <div className="workout-top">
-        <div className="workout-top-inner">
+      <div className="wk-top">
+        <div className="wk-top-row">
           <IconButton label={editing ? 'Cancelar edición' : 'Minimizar entrenamiento'} onClick={() => (editing ? discard() : goBack('/'))}>
-            <ChevronDown size={24} />
+            <ChevronLeft size={26} />
           </IconButton>
-          <button className="workout-title" onClick={() => (editing ? setEditMeta(true) : setWorkoutMenu(true))} style={{ textAlign: 'left' }}>
+          <button className="wk-title" onClick={() => (editing ? setEditMeta(true) : setListOpen(true))} aria-label={`${w.name}. Ver lista de ejercicios`}>
             <strong>{w.name}</strong>
-            <small>{editing ? `Editando · ${w.date}` : `${w.pausedAt ? 'En pausa · ' : ''}${fmtDuration(workoutDurationMs(w, now))}`}</small>
+            <small>{editing ? `Editando · ${w.date}` : w.exercises.length ? `Ejercicio ${exNumber} de ${w.exercises.length}` : 'Sin ejercicios'}</small>
           </button>
-          {!editing && (
-            <IconButton label={w.pausedAt ? 'Reanudar' : 'Pausar'} onClick={togglePause}>
-              {w.pausedAt ? <Play size={22} /> : <Pause size={22} />}
-            </IconButton>
+          {!editing ? (
+            <button className={cx('timer-pill', !!w.pausedAt && 'paused')} onClick={() => setWorkoutMenu(true)} aria-label={`Tiempo ${fmtDuration(workoutDurationMs(w, now))}${w.pausedAt ? ', en pausa' : ''}. Opciones del entrenamiento`}>
+              {w.pausedAt && <Pause size={16} />}
+              {fmtDuration(workoutDurationMs(w, now))}
+            </button>
+          ) : (
+            <Button variant="primary" size="sm" onClick={() => setFinishing(true)}>
+              Guardar
+            </Button>
           )}
-          <Button variant="primary" size="sm" onClick={() => setFinishing(true)}>
-            {editing ? 'Guardar' : 'Terminar'}
-          </Button>
         </div>
-        <div className="workout-metrics" aria-live="off">
+        <div className="wk-progress">
+          <Progress value={totalSets ? completedSets / totalSets : 0} label="Series completadas" />
+        </div>
+        <div className="wk-metrics" aria-live="off">
           <span>
-            Volumen <b>{fmtVolume(stats.volume)}</b>
+            Series <b>{completedSets}/{totalSets}</b>
           </span>
           <span>
-            Series <b>{stats.sets}</b>
+            Volumen <b>{fmtVolume(stats.volume)}</b>
           </span>
           {stats.warmupSets > 0 && (
             <span>
               Calent. <b>{stats.warmupSets}</b>
             </span>
           )}
+          <button className="link small" style={{ marginLeft: 'auto', minHeight: 0 }} onClick={() => setView(view === 'focus' ? 'list' : 'focus')}>
+            {view === 'focus' ? 'Ver todos' : 'Ver uno a uno'}
+          </button>
         </div>
       </div>
 
@@ -378,60 +446,141 @@ export function WorkoutScreen({ editId }: { editId?: string }) {
           </div>
         )}
 
-        {w.exercises.map((ex, i) => (
-          <ExerciseCard
-            key={ex.id}
-            ex={ex}
-            prev={prevByExercise.get(ex.exerciseId)}
-            supersetWithNext={!!ex.supersetId && w.exercises[i + 1]?.supersetId === ex.supersetId}
-            showNotes={!!showNotes[ex.id] || !!ex.notes}
-            onMenu={() => setMenuEx(ex.id)}
-            onNotes={(notes) => updateEx(ex.id, (e) => ({ ...e, notes }))}
-            onToggle={(s) => toggleSet(ex, s)}
-            onChange={(setId, p) => updateSet(ex.id, setId, p)}
-            onSetMenu={(setId) => setSetMenu({ exId: ex.id, setId })}
-            onAddSet={() => addSet(ex)}
-            onRest={() => setRestEdit(ex.id)}
-            defaultRest={settings.defaultRestSec}
+        {shown.map(renderCard)}
+
+        {restRemaining != null && w.rest && (
+          <RestCard
+            remaining={restRemaining}
+            total={w.rest.durationSec}
+            paused={w.rest.pausedRemainingMs != null}
+            label={w.rest.label}
+            onAdjust={(d) => {
+              const r = restRemainingMs(w) ?? 0;
+              const nr = Math.max(0, r + d * 1000);
+              commit({
+                ...w,
+                rest: w.rest!.pausedRemainingMs != null ? { ...w.rest!, pausedRemainingMs: nr, durationSec: Math.max(1, w.rest!.durationSec + d) } : { ...w.rest!, endsAt: Date.now() + nr, durationSec: Math.max(1, w.rest!.durationSec + d) },
+              });
+            }}
+            onPause={() => {
+              const r = restRemainingMs(w) ?? 0;
+              commit({ ...w, rest: w.rest!.pausedRemainingMs != null ? { ...w.rest!, endsAt: Date.now() + w.rest!.pausedRemainingMs, pausedRemainingMs: null } : { ...w.rest!, pausedRemainingMs: Math.max(0, r) } });
+            }}
+            onRestart={() => commit({ ...w, rest: { ...w.rest!, endsAt: Date.now() + w.rest!.durationSec * 1000, pausedRemainingMs: null } })}
+            onClose={() => commit({ ...w, rest: null })}
           />
-        ))}
+        )}
+
+        {view === 'focus' && nextBlock && (
+          <Card className="next-card" onClick={() => goBlock(bi + 1)} ariaLabel={`Siguiente ejercicio: ${nextBlock.map((e) => e.name).join(', ')}`}>
+            <div className="card-row">
+              <ExerciseArt exercise={exMap.get(nextBlock[0].exerciseId)} size={56} />
+              <div className="grow">
+                <div className="card-kicker">Siguiente ejercicio</div>
+                <div className="card-title" style={{ fontSize: 16 }}>
+                  {nextBlock.map((e) => e.name).join(' + ')}
+                </div>
+                <div className="card-sub">
+                  {MUSCLES[nextBlock[0].primaryMuscle]}
+                  {exMap.get(nextBlock[0].exerciseId) ? ` · ${EQUIPMENT[exMap.get(nextBlock[0].exerciseId)!.equipment]}` : ''}
+                </div>
+              </div>
+              <ChevronRight size={18} className="row-chevron" />
+            </div>
+          </Card>
+        )}
+        {view === 'focus' && bi > 0 && (
+          <Button variant="plain" block className="mt" icon={<ChevronLeft size={18} />} onClick={() => goBlock(bi - 1)}>
+            Ejercicio anterior
+          </Button>
+        )}
 
         <div className="stack mt-lg">
           <Button variant="tinted" size="lg" block icon={<Plus size={20} />} onClick={() => setPicker({ mode: 'add' })}>
             Añadir ejercicios
           </Button>
-          <Button variant="plain" block icon={<StickyNote size={18} />} onClick={() => setShowNotes((s) => ({ ...s, __w: !s.__w }))}>
+          <Button variant="plain" block icon={<StickyNote size={18} />} onClick={() => setShowNotes((x) => ({ ...x, __w: !x.__w }))}>
             {showNotes.__w || w.notes ? 'Notas del entrenamiento' : 'Añadir nota al entrenamiento'}
           </Button>
           {(showNotes.__w || w.notes) && <TextArea value={w.notes} onChange={(e) => commit({ ...w, notes: e.target.value })} placeholder="Sensaciones, contexto, molestias…" aria-label="Notas del entrenamiento" />}
+          <Button block onClick={() => setFinishing(true)} icon={<Flag size={18} />}>
+            {editing ? 'Guardar cambios' : 'Terminar entrenamiento'}
+          </Button>
           <Button variant="danger" block onClick={discard}>
             {editing ? 'Descartar cambios' : 'Descartar entrenamiento'}
           </Button>
         </div>
       </div>
 
-      {!editing && w.rest && remaining != null && (
-        <RestBar
-          remaining={remaining}
-          total={w.rest.durationSec}
-          paused={w.rest.pausedRemainingMs != null}
-          label={w.rest.label}
-          onAdjust={(d) => {
-            const r = restRemainingMs(w) ?? 0;
-            const nr = Math.max(0, r + d * 1000);
-            commit({
-              ...w,
-              rest: w.rest!.pausedRemainingMs != null ? { ...w.rest!, pausedRemainingMs: nr, durationSec: Math.max(1, w.rest!.durationSec + d) } : { ...w.rest!, endsAt: Date.now() + nr, durationSec: Math.max(1, w.rest!.durationSec + d) },
-            });
-          }}
-          onPause={() => {
-            const r = restRemainingMs(w) ?? 0;
-            commit({ ...w, rest: w.rest!.pausedRemainingMs != null ? { ...w.rest!, endsAt: Date.now() + w.rest!.pausedRemainingMs, pausedRemainingMs: null } : { ...w.rest!, pausedRemainingMs: Math.max(0, r) } });
-          }}
-          onRestart={() => commit({ ...w, rest: { ...w.rest!, endsAt: Date.now() + w.rest!.durationSec * 1000, pausedRemainingMs: null } })}
-          onClose={() => commit({ ...w, rest: null })}
-        />
+      {w.exercises.length > 0 && (
+        <div className="wk-actions">
+          <Button size="lg" icon={<Plus size={18} />} onClick={() => addSet(pending?.ex ?? block[block.length - 1])}>
+            Añadir serie
+          </Button>
+          {pending ? (
+            <Button variant="primary" size="lg" icon={<Check size={20} strokeWidth={2.6} />} onClick={() => toggleSet(pending.ex, pending.s)}>
+              Completar serie
+            </Button>
+          ) : view === 'focus' && nextBlock ? (
+            <Button variant="primary" size="lg" icon={<ChevronRight size={20} />} onClick={() => goBlock(bi + 1)}>
+              Siguiente
+            </Button>
+          ) : (
+            <Button variant="primary" size="lg" icon={<Flag size={18} />} onClick={() => setFinishing(true)}>
+              {editing ? 'Guardar' : 'Terminar'}
+            </Button>
+          )}
+        </div>
       )}
+
+      <Sheet open={listOpen} onClose={() => setListOpen(false)} title="Ejercicios del entrenamiento">
+        <div className="list">
+          {blocks.map((bl, i) => (
+            <button
+              key={bl[0].id}
+              type="button"
+              className={cx('row row-button wk-list-item', i === bi && 'current')}
+              onClick={() => {
+                setView('focus');
+                goBlock(i);
+                setListOpen(false);
+              }}
+            >
+              <ExerciseArt exercise={exMap.get(bl[0].exerciseId)} size={48} />
+              <span className="row-main">
+                <span className="row-title">{bl.map((e) => e.name).join(' + ')}</span>
+                <span className="row-subtitle">
+                  {bl.reduce((n, e) => n + e.sets.filter((x) => x.completed).length, 0)}/{bl.reduce((n, e) => n + e.sets.length, 0)} series
+                  {bl.length > 1 ? ' · Superserie' : ''}
+                </span>
+              </span>
+              {bl.every((e) => e.sets.length && e.sets.every((x) => x.completed)) && <Check size={20} className="option-check" />}
+            </button>
+          ))}
+        </div>
+        <div className="btn-row mt">
+          {w.exercises.length > 1 && (
+            <Button
+              onClick={() => {
+                setListOpen(false);
+                setReorder(true);
+              }}
+            >
+              Reordenar
+            </Button>
+          )}
+          <Button
+            variant="tinted"
+            icon={<Plus size={18} />}
+            onClick={() => {
+              setListOpen(false);
+              setPicker({ mode: 'add' });
+            }}
+          >
+            Añadir
+          </Button>
+        </div>
+      </Sheet>
 
       <ExercisePicker
         open={!!picker}
@@ -444,6 +593,7 @@ export function WorkoutScreen({ editId }: { editId?: string }) {
             updateEx(picker.exId, (old) => ({ ...workoutExerciseFrom(ex), id: old.id, supersetId: old.supersetId, restSec: old.restSec, sets: old.sets.map((s) => ({ ...s, completed: false, completedAt: null })) }), { undoable: true, message: 'Ejercicio sustituido' });
           } else {
             commit({ ...w, exercises: [...w.exercises, ...list.map((ex) => workoutExerciseFrom(ex, { sets: [newWorkoutSet(), newWorkoutSet(), newWorkoutSet()] }))] });
+            if (list.length) setBlockIdx(blocks.length);
           }
         }}
       />
@@ -546,9 +696,11 @@ function fmtPrev(s: WorkoutSet | undefined, ex: WorkoutExercise): string {
 
 function ExerciseCard({
   ex,
+  info,
   prev,
   supersetWithNext,
   showNotes,
+  nextSetId,
   onMenu,
   onNotes,
   onToggle,
@@ -556,12 +708,15 @@ function ExerciseCard({
   onSetMenu,
   onAddSet,
   onRest,
+  onCopyPrev,
   defaultRest,
 }: {
   ex: WorkoutExercise;
+  info?: Exercise;
   prev?: WorkoutSet[];
   supersetWithNext: boolean;
   showNotes: boolean;
+  nextSetId: string | null;
   onMenu: () => void;
   onNotes: (n: string) => void;
   onToggle: (s: WorkoutSet) => void;
@@ -569,6 +724,7 @@ function ExerciseCard({
   onSetMenu: (setId: string) => void;
   onAddSet: () => void;
   onRest: () => void;
+  onCopyPrev: (sets: WorkoutSet[]) => void;
   defaultRest: number;
 }) {
   const tw = usesWeight(ex.tracking);
@@ -577,25 +733,50 @@ function ExerciseCard({
   const tdist = usesDistance(ex.tracking);
   const effort = ex.effort !== 'none';
   const valueCols = (tw ? 1 : 0) + (tr ? 1 : 0) + (td ? 1 : 0) + (tdist ? 1 : 0) + (effort ? 1 : 0);
-  const cols = 3 + valueCols; // número, anterior, valores…, check
-  const colClass = cols <= 4 ? 'cols-4' : cols >= 6 ? 'cols-6' : '';
+  const colClass = valueCols <= 1 ? 'cols-3' : valueCols >= 3 ? 'cols-5' : '';
+  const prevDone = (prev ?? []).filter((x) => x.completed && x.type !== 'warmup');
+  const bestPrev = prevDone[0];
   let n = 0;
   return (
     <section className={cx('wex', ex.supersetId && 'superset')} aria-label={ex.name}>
       <div className="wex-head">
-        <div className="wex-name">
+        <ExerciseArt exercise={info ?? { id: ex.exerciseId, equipment: 'otros', movement: 'compuesto', primaryMuscle: ex.primaryMuscle }} size={76} />
+        <button className="wex-name" onClick={() => navigate(`/exercises/${ex.exerciseId}`)} aria-label={`${ex.name}: ver ejercicio`}>
           <h3>{ex.name}</h3>
           <p>
-            <button className="link small" onClick={onRest}>
-              Descanso {fmtSeconds(ex.restSec ?? defaultRest)}
-            </button>
-            {ex.supersetId && <span> · Superserie{supersetWithNext ? ' ↓' : ''}</span>}
+            {MUSCLES[ex.primaryMuscle]}
+            {info ? ` · ${EQUIPMENT[info.equipment]}` : ''}
+            {ex.supersetId && ` · Superserie${supersetWithNext ? ' ↓' : ''}`}
           </p>
-        </div>
+        </button>
         <IconButton label={`Opciones de ${ex.name}`} onClick={onMenu}>
           <Ellipsis size={22} />
         </IconButton>
       </div>
+      {bestPrev && (
+        <button
+          type="button"
+          className="last-time"
+          style={{ width: 'calc(100% - 28px)', textAlign: 'left' }}
+          onClick={() =>
+            onCopyPrev(
+              ex.sets.map((s, i) => {
+                const p = matchPrev(prev, ex.sets, i);
+                return !s.completed && p ? { ...s, weight: s.weight ?? p.weight, reps: s.reps ?? p.reps, durationSec: s.durationSec ?? p.durationSec, distanceM: s.distanceM ?? p.distanceM } : s;
+              }),
+            )
+          }
+          aria-label={`Última vez: ${fmtPrev(bestPrev, ex)}, ${prevDone.length} series. Pulsa para copiar los valores`}
+        >
+          <TrendingUp size={16} />
+          <span style={{ flex: 1 }}>
+            Última vez · {fmtPrevLong(bestPrev, ex)} · {prevDone.length} {prevDone.length === 1 ? 'serie' : 'series'}
+          </span>
+          <span className="link small" style={{ minHeight: 0 }}>
+            Copiar
+          </span>
+        </button>
+      )}
       {showNotes && (
         <div className="wex-notes">
           <Input value={ex.notes} onChange={(e) => onNotes(e.target.value)} placeholder="Nota del ejercicio" aria-label={`Nota de ${ex.name}`} />
@@ -604,14 +785,13 @@ function ExerciseCard({
       <div className="set-table">
         <div className={cx('set-head', colClass)}>
           <span>Serie</span>
-          <span>Anterior</span>
-          {tw && <span>{`${weightColumnLabel(ex.tracking)} ${wUnit()}`}</span>}
+          {tw && <span>{ex.tracking === 'weight_reps' ? wUnit() : `${weightColumnLabel(ex.tracking)} ${wUnit()}`}</span>}
           {tdist && <span>Metros</span>}
           {tr && <span>Reps</span>}
           {td && <span>Min:s</span>}
           {effort && <span>{ex.effort.toUpperCase()}</span>}
           <span>
-            <Check size={14} />
+            <Clock3 size={14} aria-label="Completada" />
           </span>
         </div>
         {ex.sets.map((s, i) => {
@@ -621,54 +801,44 @@ function ExerciseCard({
           // Nombre accesible coherente con el número visible.
           const sname = s.type === 'warmup' ? `de calentamiento ${i + 1}` : `serie ${n}`;
           return (
-            <div key={s.id}>
-              <div className={cx('set-row', colClass, s.completed && 'done')}>
-                <button className={cx('set-num', `t-${s.type}`)} onClick={() => onSetMenu(s.id)} aria-label={`${sname[0].toUpperCase()}${sname.slice(1)}: ${SET_TYPES[s.type].label}. Cambiar tipo o eliminar`}>
-                  {label}
-                  {s.type === 'drop' || s.type === 'failure' ? SET_TYPES[s.type].short : ''}
-                </button>
-                <button
-                  className="set-prev"
-                  onClick={() => p && onChange(s.id, { weight: p.weight, reps: p.reps, durationSec: p.durationSec, distanceM: p.distanceM })}
-                  aria-label={p ? `Usar valores anteriores: ${fmtPrev(p, ex)}` : 'Sin datos anteriores'}
-                  disabled={!p}
-                >
-                  {fmtPrev(p, ex)}
-                </button>
-                {tw && (
-                  <NumberInput
-                    value={s.weight != null ? toDisplayWeight(s.weight) : null}
-                    onChange={(v) => onChange(s.id, { weight: v == null ? null : fromDisplayWeight(v) })}
-                    placeholder={t?.weight != null ? fmtWeightNum(t.weight) : p?.weight != null ? fmtWeightNum(p.weight) : '0'}
-                    ariaLabel={`Peso ${sname}`}
-                    max={9999}
-                  />
-                )}
-                {tdist && <NumberInput value={s.distanceM} onChange={(v) => onChange(s.id, { distanceM: v })} placeholder={p?.distanceM ? String(p.distanceM) : '0'} ariaLabel={`Distancia ${sname}`} max={1000000} />}
-                {tr && (
-                  <NumberInput
-                    value={s.reps}
-                    decimals={false}
-                    onChange={(v) => onChange(s.id, { reps: v })}
-                    placeholder={t?.repsMin != null ? (t.repsMax != null && t.repsMax !== t.repsMin ? `${t.repsMin}-${t.repsMax}` : String(t.repsMin)) : p?.reps != null ? String(p.reps) : '0'}
-                    ariaLabel={`Repeticiones ${sname}`}
-                    max={9999}
-                  />
-                )}
-                {td && <DurationInput value={s.durationSec} onChange={(v) => onChange(s.id, { durationSec: v })} label={`Duración ${sname}`} />}
-                {effort && (
-                  <NumberInput
-                    value={ex.effort === 'rpe' ? s.rpe : s.rir}
-                    onChange={(v) => onChange(s.id, ex.effort === 'rpe' ? { rpe: v } : { rir: v })}
-                    placeholder={ex.effort === 'rpe' ? '8' : '2'}
-                    ariaLabel={`${ex.effort.toUpperCase()} ${sname}`}
-                    max={ex.effort === 'rpe' ? 10 : 10}
-                  />
-                )}
-                <button className={cx('check-btn', s.completed && 'on')} onClick={() => onToggle(s)} aria-pressed={s.completed} aria-label={`${s.completed ? 'Desmarcar' : 'Completar'} ${sname}`}>
-                  <Check size={20} strokeWidth={2.6} />
-                </button>
-              </div>
+            <div key={s.id} className={cx('set-row', colClass, s.completed && 'done', s.id === nextSetId && 'next')}>
+              <button className={cx('set-num', `t-${s.type}`)} onClick={() => onSetMenu(s.id)} aria-label={`${sname[0].toUpperCase()}${sname.slice(1)}: ${SET_TYPES[s.type].label}. Cambiar tipo o eliminar`}>
+                {label}
+                {s.type === 'drop' || s.type === 'failure' ? SET_TYPES[s.type].short : ''}
+              </button>
+              {tw && (
+                <NumberInput
+                  value={s.weight != null ? toDisplayWeight(s.weight) : null}
+                  onChange={(v) => onChange(s.id, { weight: v == null ? null : fromDisplayWeight(v) })}
+                  placeholder={t?.weight != null ? fmtWeightNum(t.weight) : p?.weight != null ? fmtWeightNum(p.weight) : '0'}
+                  ariaLabel={`Peso ${sname}`}
+                  max={9999}
+                />
+              )}
+              {tdist && <NumberInput value={s.distanceM} onChange={(v) => onChange(s.id, { distanceM: v })} placeholder={p?.distanceM ? String(p.distanceM) : '0'} ariaLabel={`Distancia ${sname}`} max={1000000} />}
+              {tr && (
+                <NumberInput
+                  value={s.reps}
+                  decimals={false}
+                  onChange={(v) => onChange(s.id, { reps: v })}
+                  placeholder={t?.repsMin != null ? (t.repsMax != null && t.repsMax !== t.repsMin ? `${t.repsMin}-${t.repsMax}` : String(t.repsMin)) : p?.reps != null ? String(p.reps) : '0'}
+                  ariaLabel={`Repeticiones ${sname}`}
+                  max={9999}
+                />
+              )}
+              {td && <DurationInput value={s.durationSec} onChange={(v) => onChange(s.id, { durationSec: v })} label={`Duración ${sname}`} />}
+              {effort && (
+                <NumberInput
+                  value={ex.effort === 'rpe' ? s.rpe : s.rir}
+                  onChange={(v) => onChange(s.id, ex.effort === 'rpe' ? { rpe: v } : { rir: v })}
+                  placeholder={ex.effort === 'rpe' ? '8' : '2'}
+                  ariaLabel={`${ex.effort.toUpperCase()} ${sname}`}
+                  max={10}
+                />
+              )}
+              <button className={cx('check-btn', s.completed && 'on')} onClick={() => onToggle(s)} aria-pressed={s.completed} aria-label={`${s.completed ? 'Desmarcar' : 'Completar'} ${sname}`}>
+                <Check size={22} strokeWidth={3} />
+              </button>
             </div>
           );
         })}
@@ -677,9 +847,18 @@ function ExerciseCard({
         <Button size="sm" variant="tinted" icon={<Plus size={16} />} onClick={onAddSet}>
           Añadir serie
         </Button>
+        <Button size="sm" icon={<Timer size={16} />} onClick={onRest} aria-label={`Descanso ${fmtSeconds(ex.restSec ?? defaultRest)}. Cambiar`}>
+          {fmtSeconds(ex.restSec ?? defaultRest)}
+        </Button>
       </div>
     </section>
   );
+}
+
+function fmtPrevLong(s: WorkoutSet, ex: WorkoutExercise): string {
+  if (usesDuration(ex.tracking)) return fmtPrev(s, ex);
+  if (usesWeight(ex.tracking)) return `${fmtWeightNum(s.weight ?? 0)} ${wUnit()} × ${s.reps ?? 0} reps`;
+  return `${s.reps ?? 0} reps`;
 }
 
 function DurationInput({ value, onChange, label }: { value: number | null; onChange: (v: number | null) => void; label: string }) {
@@ -715,7 +894,7 @@ function DurationInput({ value, onChange, label }: { value: number | null; onCha
   );
 }
 
-function RestBar({
+function RestCard({
   remaining,
   total,
   paused,
@@ -736,40 +915,52 @@ function RestBar({
 }) {
   const done = remaining <= 0;
   const pct = total > 0 ? Math.max(0, Math.min(1, remaining / (total * 1000))) : 0;
+  const R = 36;
+  const C = 2 * Math.PI * R;
+  const ref = useRef<HTMLDivElement>(null);
+  // Al empezar el descanso, la tarjeta se desplaza a la vista.
+  useEffect(() => {
+    ref.current?.scrollIntoView({ behavior: 'smooth', block: 'center' });
+  }, []);
   return (
-    <div className={cx('rest-bar', done && 'finished')} role="timer" aria-live={done ? 'assertive' : 'off'}>
-      <div className="rest-progress">
-        <div style={{ width: `${pct * 100}%` }} />
-      </div>
-      <div className="rest-inner">
-        <div style={{ minWidth: 0, flex: 1 }}>
-          <div className="rest-time">{done ? '0:00' : fmtSeconds(Math.ceil(remaining / 1000))}</div>
-          <div className="tiny muted" style={{ whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
-            {done ? 'Descanso terminado' : paused ? 'Descanso en pausa' : `Descanso · ${label}`}
-          </div>
+    <div ref={ref} className={cx('rest-card', done && 'finished')} role="timer" aria-live={done ? 'assertive' : 'off'} aria-label={`Descanso${label ? ` tras ${label}` : ''}`}>
+      <div className="grow">
+        <div className="rest-label">{done ? 'Descanso terminado' : paused ? 'Descanso en pausa' : 'Descanso'}</div>
+        <div className="rest-time">{done ? '00:00' : fmtSeconds(Math.ceil(remaining / 1000)).padStart(5, '0')}</div>
+        <div className="rest-adjust">
+          {done ? (
+            <>
+              <Button size="sm" onClick={onRestart} icon={<RotateCcw size={14} />}>
+                Repetir
+              </Button>
+              <Button size="sm" variant="primary" onClick={onClose}>
+                Continuar
+              </Button>
+            </>
+          ) : (
+            <>
+              <Button size="sm" onClick={() => onAdjust(-15)} aria-label="Restar 15 segundos">
+                −15 s
+              </Button>
+              <Button size="sm" onClick={() => onAdjust(15)} aria-label="Sumar 15 segundos">
+                +15 s
+              </Button>
+              <Button size="sm" variant="plain" onClick={onClose} icon={<SkipForward size={14} />} aria-label="Saltar descanso">
+                Saltar
+              </Button>
+            </>
+          )}
         </div>
-        {done ? (
-          <>
-            <Button size="sm" onClick={onRestart} icon={<RotateCcw size={16} />} aria-label="Reiniciar descanso" />
-            <Button size="sm" variant="primary" onClick={onClose}>
-              Continuar
-            </Button>
-          </>
-        ) : (
-          <>
-            <Button size="sm" onClick={() => onAdjust(-15)} aria-label="Restar 15 segundos">
-              −15
-            </Button>
-            <Button size="sm" onClick={() => onAdjust(15)} aria-label="Sumar 15 segundos">
-              +15
-            </Button>
-            <IconButton label={paused ? 'Reanudar descanso' : 'Pausar descanso'} onClick={onPause}>
-              {paused ? <Play size={20} /> : <Pause size={20} />}
-            </IconButton>
-            <IconButton label="Saltar descanso" onClick={onClose}>
-              <SkipForward size={20} />
-            </IconButton>
-          </>
+      </div>
+      <div className="rest-ring">
+        <svg width="84" height="84" aria-hidden="true">
+          <circle cx="42" cy="42" r={R} className="ring-track" />
+          <circle cx="42" cy="42" r={R} className="ring-fill" strokeDasharray={`${C * pct} ${C}`} transform="rotate(-90 42 42)" />
+        </svg>
+        {!done && (
+          <button type="button" onClick={onPause} aria-label={paused ? 'Reanudar descanso' : 'Pausar descanso'}>
+            {paused ? <Play size={24} fill="currentColor" /> : <Pause size={24} fill="currentColor" />}
+          </button>
         )}
       </div>
     </div>
@@ -875,7 +1066,7 @@ function MetaSheet({ open, onClose, w, editing, onSave }: { open: boolean; onClo
       {editing && (
         <div className="form-grid">
           <Field label="Fecha">
-            <Input type="date" value={date} onChange={(e) => setDate(e.target.value)} />
+            <DateInput value={date} max={today()} onChange={setDate} label="Fecha" />
           </Field>
           <Field label="Hora de inicio">
             <Input type="time" value={time} onChange={(e) => setTime(e.target.value)} />

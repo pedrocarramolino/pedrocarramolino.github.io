@@ -41,6 +41,18 @@ const go = async (hash) => {
   await page.goto(BASE + '#' + hash);
   await page.waitForTimeout(250);
 };
+const MESES = ['ene', 'feb', 'mar', 'abr', 'may', 'jun', 'jul', 'ago', 'sept', 'oct', 'nov', 'dic'];
+const pickDate = async (scope, label, iso) => {
+  await scope.getByRole('button', { name: new RegExp(`^${label}:`) }).click();
+  const [y, m, d] = iso.split('-').map(Number);
+  const now = new Date();
+  if (m - 1 !== now.getMonth() || y !== now.getFullYear()) await page.getByRole('button', { name: 'Mes anterior' }).click();
+  await page.getByRole('button', { name: `${d} ${MESES[m - 1]} ${y}`, exact: true }).click();
+};
+const typeWeight = async (v) => {
+  await page.getByRole('button', { name: /^Peso .*Pulsa para escribirlo/ }).click();
+  await page.getByRole('textbox', { name: 'Peso corporal' }).fill(v);
+};
 const noHScroll = async (label) => {
   const o = await page.evaluate(() => ({ sw: document.documentElement.scrollWidth, w: window.innerWidth }));
   assert(o.sw <= o.w, `${label}: desplazamiento horizontal (${o.sw} > ${o.w})`);
@@ -143,12 +155,13 @@ await step('Entrenar desde rutina: registrar series, descanso, deshacer', async 
   assert((await page.getByLabel(/Peso serie/).count()) === before - 1, 'no se eliminó la serie');
   await page.getByRole('button', { name: 'Deshacer' }).click();
   assert((await page.getByLabel(/Peso serie/).count()) === before, 'deshacer no restauró la serie');
-  const metrics = await page.locator('.workout-metrics').innerText();
+  const metrics = await page.locator('.wk-metrics').innerText();
   assert(/Volumen\s*1\.?880/.test(metrics.replace(/\s+/g, ' ')), 'volumen en vivo incorrecto: ' + metrics);
 });
 
 await step('Pausar, reanudar y recuperar sesión tras recargar', async () => {
-  await page.getByRole('button', { name: 'Pausar' }).first().click();
+  await page.getByRole('button', { name: /^Tiempo / }).click();
+  await page.getByRole('button', { name: 'Pausar', exact: true }).click();
   await page.getByText('Entrenamiento en pausa').waitFor();
   await page.getByRole('button', { name: 'Reanudar' }).first().click();
   await page.reload();
@@ -162,7 +175,7 @@ await step('Pausar, reanudar y recuperar sesión tras recargar', async () => {
 });
 
 await step('Finalizar sesión y verificar métricas del resumen', async () => {
-  await page.getByRole('button', { name: 'Terminar' }).click();
+  await page.getByRole('button', { name: 'Terminar entrenamiento' }).click();
   await page.getByText(/series sin completar/).waitFor();
   await page.getByRole('button', { name: 'Terminar y guardar' }).click();
   await page.getByRole('heading', { name: '¡Entrenamiento guardado!' }).waitFor();
@@ -179,13 +192,14 @@ await step('Valores de la sesión anterior y récord en segunda sesión', async 
   await go('/train');
   await page.getByRole('button', { name: 'Empezar Torso A' }).click();
   const press = page.locator('section[aria-label="Press de banca con barra"]');
-  const prev = await press.locator('.set-prev').nth(1).innerText();
-  assert(prev.includes('80×8'), 'anterior no mostrado: ' + prev);
-  await press.locator('.set-prev').nth(1).click();
+  const prev = await press.locator('.last-time').innerText();
+  assert(prev.includes('80 kg × 8'), 'última vez no mostrada: ' + prev);
+  await press.locator('.last-time').click();
+  await page.waitForTimeout(250);
   assert((await press.getByLabel('Peso serie 1', { exact: true }).inputValue()) === '80', 'no copió los valores anteriores');
   await press.getByLabel('Peso serie 1', { exact: true }).fill('85');
   await press.getByLabel('Completar serie 1', { exact: true }).click();
-  await page.getByRole('button', { name: 'Terminar' }).click();
+  await page.getByRole('button', { name: 'Terminar entrenamiento' }).click();
   await page.getByRole('button', { name: 'Terminar y guardar' }).click();
   await page.getByText('Récords personales').waitFor();
   await page.getByText('Peso máximo').first().waitFor();
@@ -220,20 +234,21 @@ await step('Estadísticas por ejercicio y 1RM estimado', async () => {
 await step('Registrar peso, corregir medición anterior y variación semanal', async () => {
   await go('/');
   await page.getByRole('button', { name: 'Registrar peso' }).first().click();
-  await page.getByLabel('Peso corporal', { exact: true }).fill('80,4');
+  await page.getByRole('slider', { name: 'Peso corporal' }).waitFor();
+  await typeWeight('80,4');
   await page.getByRole('button', { name: 'Guardar' }).click();
   await page.getByText('Peso registrado').waitFor();
   await go('/body/weight');
   // Registro de hace 7 días
-  await page.getByRole('button', { name: 'Registrar peso' }).click();
-  await page.getByLabel('Peso corporal', { exact: true }).fill('81');
+  await page.getByRole('button', { name: 'Registrar peso' }).first().click();
+  await typeWeight('81');
   const d = new Date(Date.now() - 7 * 86400000).toISOString().slice(0, 10);
-  await page.locator('input[type=date]').fill(d);
+  await pickDate(page.getByRole('dialog'), 'Fecha', d);
   await page.getByRole('button', { name: 'Guardar' }).click();
   await page.getByText('Variación semanal').waitFor();
   // Corregir el antiguo: 81 → 81,5
   await page.locator('.row-split-main', { hasText: '81 kg' }).click();
-  await page.getByLabel('Peso corporal', { exact: true }).fill('81,5');
+  await typeWeight('81,5');
   await page.getByRole('button', { name: 'Guardar' }).click();
   await page.getByText('Registro corregido').waitFor();
   const t = (await page.locator('main').innerText()).replace(/\s+/g, ' ');
@@ -318,7 +333,7 @@ await step('Rutina vacía y datos incompletos', async () => {
   await page.getByText('Rutina vacía').waitFor();
   await go('/train');
   await page.getByRole('button', { name: 'Entrenamiento libre' }).click();
-  await page.getByRole('button', { name: 'Terminar' }).click();
+  await page.getByRole('button', { name: 'Terminar entrenamiento' }).click();
   await page.getByText('No hay ninguna serie completada').waitFor();
   await page.getByRole('button', { name: 'Seguir' }).click();
   await page.getByRole('button', { name: 'Descartar entrenamiento' }).click();
@@ -356,7 +371,8 @@ await step('Contenido no tapado por la barra inferior', async () => {
 
 await step('Modo oscuro y paleta sin verde', async () => {
   await go('/profile');
-  await page.getByRole('radio', { name: 'Oscuro' }).click();
+  await page.getByRole('button', { name: /^Tema/ }).click();
+  await page.getByRole('option', { name: 'Oscuro' }).click();
   await go('/');
   const bg = await page.evaluate(() => getComputedStyle(document.body).backgroundColor);
   assert(bg === 'rgb(17, 18, 22)', 'fondo oscuro incorrecto ' + bg);
@@ -377,17 +393,29 @@ await step('Modo oscuro y paleta sin verde', async () => {
   });
   assert(!greens.length, 'colores verdes encontrados: ' + greens.join(', '));
   await page.getByRole('link', { name: 'Perfil' }).click();
-  await page.getByRole('radio', { name: 'Claro' }).click();
+  await page.getByRole('button', { name: /^Tema/ }).click();
+  await page.getByRole('option', { name: 'Claro' }).click();
   await go('/progress');
   await shot('09-progreso-claro');
 });
 
-await step('Escritorio (1280px) con navegación lateral', async () => {
+await step('Escritorio (1280px): columna de ancho móvil con barra inferior', async () => {
   await page.setViewportSize({ width: 1280, height: 800 });
   await go('/');
-  assert(await page.locator('.sidebar').isVisible(), 'sin barra lateral');
-  assert(!(await page.locator('.tabbar').isVisible()), 'barra inferior visible en escritorio');
+  const app = await page.locator('.app').boundingBox();
+  const bar = await page.locator('.tabbar').boundingBox();
+  assert(app && app.width <= 481 && Math.abs(app.x + app.width / 2 - 640) < 2, 'la columna no está centrada o es demasiado ancha');
+  assert(bar && bar.width <= 481, 'barra inferior demasiado ancha');
   await shot('10-escritorio');
+});
+
+await step('Sin selects ni campos de fecha nativos', async () => {
+  await page.setViewportSize({ width: 390, height: 844 });
+  for (const s of ['/', '/routines', '/routines/new', '/exercises', '/progress', '/profile', '/history', '/body/weight', '/body/measurements', '/plan', '/reviews', '/profile/data']) {
+    await go(s);
+    const n = await page.evaluate(() => document.querySelectorAll('select, input[type=date]').length);
+    assert(n === 0, `${s}: ${n} controles nativos`);
+  }
 });
 
 await step('PWA: manifiesto y service worker', async () => {

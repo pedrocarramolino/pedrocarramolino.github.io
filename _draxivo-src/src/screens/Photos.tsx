@@ -5,7 +5,7 @@ import { useQuery } from '../app/hooks';
 import { useToast } from '../app/context';
 import { deletePhoto, listPhotos, savePhoto } from '../db/repo';
 import { fmtDate, today } from '../lib/dates';
-import { Button, Empty, Field, Input, Loading, Page, Section, Segmented, Select, Sheet, cx, useConfirm } from '../ui/kit';
+import { DateInput, Button, Empty, Field, Input, Loading, Page, Section, Segmented, Select, Sheet, cx, useConfirm } from '../ui/kit';
 
 const POSES: Record<ProgressPhoto['pose'], string> = { frente: 'Frente', lado: 'Lado', espalda: 'Espalda', otra: 'Otra' };
 
@@ -162,7 +162,7 @@ export function PhotosScreen() {
             <PreviewImg blob={pending.blob} />
             <div className="form-grid mt">
               <Field label="Fecha">
-                <Input type="date" value={pending.date} max={today()} onChange={(e) => setPending({ ...pending, date: e.target.value })} />
+                <DateInput value={pending.date} max={today()} onChange={(v) => setPending({ ...pending, date: v })} label="Fecha" />
               </Field>
               <Field label="Postura">
                 <Select value={pending.pose} onChange={(v) => setPending({ ...pending, pose: v as ProgressPhoto['pose'] })}>

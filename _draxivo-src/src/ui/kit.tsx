@@ -1,5 +1,8 @@
 import {
+  Children,
   createContext,
+  isValidElement,
+  type ReactElement,
   useCallback,
   useContext,
   useEffect,
@@ -11,7 +14,8 @@ import {
   type ReactNode,
 } from 'react';
 import { createPortal } from 'react-dom';
-import { ChevronLeft, ChevronRight, X } from 'lucide-react';
+import { CalendarDays, Check, ChevronDown, ChevronLeft, ChevronRight, X } from 'lucide-react';
+import { dateKey } from '../lib/dates';
 import { goBack } from '../app/router';
 
 export function cx(...c: (string | false | null | undefined)[]) {
@@ -61,22 +65,85 @@ export function Page({
   return (
     <div className={cx('page', className)}>
       <header className={cx('page-header', back && 'with-back')}>
-        <div className="page-toolbar">
-          {back ? (
+        {back ? (
+          <div className="page-toolbar">
             <button className="back-btn" onClick={() => goBack(back)} aria-label={`Volver${backLabel ? ` a ${backLabel}` : ''}`}>
-              <ChevronLeft size={22} strokeWidth={2.2} />
-              <span>{backLabel ?? 'Atrás'}</span>
+              <ChevronLeft size={26} strokeWidth={2.2} />
             </button>
-          ) : (
-            <span />
-          )}
-          <div className="page-actions">{actions}</div>
-        </div>
-        {large ? <h1 className="page-title">{title}</h1> : <h1 className="page-title page-title-small">{title}</h1>}
-        {subtitle && <p className="page-subtitle">{subtitle}</p>}
+            <h1 className={cx('page-title-inline', !large && 'small')}>{title}</h1>
+            <div className="page-actions">{actions}</div>
+          </div>
+        ) : (
+          <div className="page-toolbar page-toolbar-root">
+            <h1 className="page-title">{title}</h1>
+            <div className="page-actions">{actions}</div>
+          </div>
+        )}
+        {subtitle && <p className={cx('page-subtitle', back && 'indented')}>{subtitle}</p>}
       </header>
       <div className="page-body">{children}</div>
     </div>
+  );
+}
+
+/** Tarjeta blanca con esquinas redondeadas; pulsable si recibe onClick. */
+export function Card({ children, onClick, className, ariaLabel }: { children: ReactNode; onClick?: () => void; className?: string; ariaLabel?: string }) {
+  if (onClick)
+    return (
+      <button type="button" className={cx('card card-button', className)} onClick={onClick} aria-label={ariaLabel}>
+        {children}
+      </button>
+    );
+  return <div className={cx('card', className)}>{children}</div>;
+}
+
+/** Icono dentro de un cuadrado suave, como en los ajustes de iOS. */
+export function IconTile({ children, tone = 'neutral' }: { children: ReactNode; tone?: 'neutral' | 'blue' | 'dark' }) {
+  return <span className={cx('icon-tile', `icon-tile-${tone}`)}>{children}</span>;
+}
+
+/** Fila de selección con hoja de opciones (para ajustes tipo iOS). */
+export function PickerRow<T extends string>({
+  icon,
+  title,
+  value,
+  options,
+  onChange,
+}: {
+  icon?: ReactNode;
+  title: string;
+  value: T;
+  options: { value: T; label: string }[];
+  onChange: (v: T) => void;
+}) {
+  const [open, setOpen] = useState(false);
+  const cur = options.find((o) => o.value === value);
+  return (
+    <>
+      <Row icon={icon} title={title} value={cur?.label ?? '—'} onClick={() => setOpen(true)} />
+      <Sheet open={open} onClose={() => setOpen(false)} title={title}>
+        <div className="list" role="listbox" aria-label={title}>
+          {options.map((o) => (
+            <button
+              key={o.value}
+              type="button"
+              role="option"
+              aria-selected={o.value === value}
+              className={cx('row row-button option-row', o.value === value && 'selected')}
+              onClick={() => {
+                onChange(o.value);
+                setOpen(false);
+              }}
+            >
+              <span className="row-main">
+                <span className="row-title">{o.label}</span>
+              </span>
+              {o.value === value && <Check size={20} className="option-check" aria-hidden="true" />}
+            </button>
+          ))}
+        </div>
+      </Sheet>
+    </>
   );
 }
 
@@ -246,11 +313,283 @@ export function TextArea(props: React.TextareaHTMLAttributes<HTMLTextAreaElement
   return <textarea rows={3} {...props} className={cx('input textarea', props.className)} onFocus={(e) => { props.onFocus?.(e); keepVisible(e.currentTarget); }} />;
 }
 
-export function Select({ value, onChange, children, ...rest }: Omit<React.SelectHTMLAttributes<HTMLSelectElement>, 'onChange'> & { onChange: (v: string) => void }) {
+interface Opt {
+  value: string;
+  label: ReactNode;
+}
+
+function collectOptions(children: ReactNode): Opt[] {
+  const out: Opt[] = [];
+  Children.forEach(children, (c) => {
+    if (!isValidElement(c)) return;
+    const el = c as ReactElement<{ value?: string | number; children?: ReactNode }>;
+    if (el.type === 'option') {
+      const label = el.props.children;
+      out.push({ value: el.props.value != null ? String(el.props.value) : String(label ?? ''), label });
+    } else if (el.props.children) out.push(...collectOptions(el.props.children));
+  });
+  return out;
+}
+
+/**
+ * Selector táctil propio: muestra el valor y abre una hoja con las opciones.
+ * Mantiene la API de <select> (hijos <option>) para no cambiar las pantallas.
+ */
+export function Select({
+  value,
+  onChange,
+  children,
+  title,
+  className,
+  ...rest
+}: { value: string | number | readonly string[] | undefined; onChange: (v: string) => void; children: ReactNode; title?: string; className?: string; 'aria-label'?: string; id?: string; disabled?: boolean }) {
+  const [open, setOpen] = useState(false);
+  const opts = collectOptions(children);
+  const v = String(value ?? '');
+  const current = opts.find((o) => o.value === v);
+  const label = rest['aria-label'];
   return (
-    <select className="input select" value={value} onChange={(e) => onChange(e.target.value)} {...rest}>
-      {children}
-    </select>
+    <>
+      <button
+        type="button"
+        className={cx('input select-btn', className)}
+        aria-haspopup="dialog"
+        aria-label={label ? `${label}: ${typeof current?.label === 'string' ? current.label : v}` : undefined}
+        id={rest.id}
+        disabled={rest.disabled}
+        onClick={(e) => {
+          e.preventDefault();
+          setOpen(true);
+        }}
+      >
+        <span className="select-value">{current?.label ?? '—'}</span>
+        <ChevronDown size={18} aria-hidden="true" className="select-chevron" />
+      </button>
+      <Sheet open={open} onClose={() => setOpen(false)} title={title ?? label ?? 'Seleccionar'}>
+        <div className="list" role="listbox" aria-label={title ?? label}>
+          {opts.map((o) => (
+            <button
+              key={o.value}
+              type="button"
+              role="option"
+              aria-selected={o.value === v}
+              className={cx('row row-button option-row', o.value === v && 'selected')}
+              onClick={() => {
+                onChange(o.value);
+                setOpen(false);
+              }}
+            >
+              <span className="row-main">
+                <span className="row-title">{o.label}</span>
+              </span>
+              {o.value === v && <Check size={20} className="option-check" aria-hidden="true" />}
+            </button>
+          ))}
+        </div>
+      </Sheet>
+    </>
+  );
+}
+
+const MONTHS_ES = ['enero', 'febrero', 'marzo', 'abril', 'mayo', 'junio', 'julio', 'agosto', 'septiembre', 'octubre', 'noviembre', 'diciembre'];
+
+function todayKeyLocal() {
+  return dateKey();
+}
+
+/** Selector de fecha con calendario propio (sustituye a <input type="date">). */
+export function DateInput({
+  value,
+  onChange,
+  min,
+  max,
+  placeholder = 'Elegir fecha',
+  clearable,
+  label,
+}: {
+  value: string;
+  onChange: (v: string) => void;
+  min?: string;
+  max?: string;
+  placeholder?: string;
+  clearable?: boolean;
+  label?: string;
+}) {
+  const [open, setOpen] = useState(false);
+  const [month, setMonth] = useState(value || todayKeyLocal());
+  const first = month.slice(0, 8) + '01';
+  const [y, m] = first.split('-').map(Number);
+  const daysIn = new Date(Date.UTC(y, m, 0)).getUTCDate();
+  const lead = (new Date(Date.UTC(y, m - 1, 1)).getUTCDay() + 6) % 7;
+  const t = todayKeyLocal();
+  const shift = (n: number) => {
+    const d = new Date(Date.UTC(y, m - 1 + n, 1));
+    setMonth(d.toISOString().slice(0, 10));
+  };
+  const fmt = (k: string) => {
+    const [yy, mm, dd] = k.split('-').map(Number);
+    return `${dd} ${MONTHS_ES[mm - 1].slice(0, 3)} ${yy}`;
+  };
+  return (
+    <>
+      <button
+        type="button"
+        className="input select-btn"
+        aria-haspopup="dialog"
+        aria-label={label ? `${label}: ${value ? fmt(value) : placeholder}` : undefined}
+        onClick={(e) => {
+          e.preventDefault();
+          setMonth(value || t);
+          setOpen(true);
+        }}
+      >
+        <span className={cx('select-value', !value && 'muted')}>{value ? fmt(value) : placeholder}</span>
+        <CalendarDays size={18} aria-hidden="true" className="select-chevron" />
+      </button>
+      <Sheet open={open} onClose={() => setOpen(false)} title={label ?? 'Fecha'}>
+        <div className="cal">
+          <div className="cal-head">
+            <IconButton label="Mes anterior" onClick={() => shift(-1)}>
+              <ChevronLeft size={20} />
+            </IconButton>
+            <h3>
+              {MONTHS_ES[m - 1]} {y}
+            </h3>
+            <IconButton label="Mes siguiente" onClick={() => shift(1)}>
+              <ChevronRight size={20} />
+            </IconButton>
+          </div>
+          <div className="cal-grid">
+            {['L', 'M', 'X', 'J', 'V', 'S', 'D'].map((d) => (
+              <div key={d} className="cal-wd">
+                {d}
+              </div>
+            ))}
+            {Array.from({ length: lead }, (_, i) => (
+              <span key={'e' + i} />
+            ))}
+            {Array.from({ length: daysIn }, (_, i) => {
+              const k = `${first.slice(0, 8)}${String(i + 1).padStart(2, '0')}`;
+              const disabled = (!!max && k > max) || (!!min && k < min);
+              return (
+                <button
+                  key={k}
+                  type="button"
+                  disabled={disabled}
+                  className={cx('cal-day', k === t && 'today', k === value && 'selected', disabled && 'other')}
+                  aria-label={fmt(k)}
+                  aria-pressed={k === value}
+                  onClick={() => {
+                    onChange(k);
+                    setOpen(false);
+                  }}
+                >
+                  <span>{i + 1}</span>
+                </button>
+              );
+            })}
+          </div>
+        </div>
+        <div className="btn-row mt">
+          {(!max || t <= max) && (
+            <Button
+              variant="tinted"
+              onClick={() => {
+                onChange(t);
+                setOpen(false);
+              }}
+            >
+              Hoy
+            </Button>
+          )}
+          {clearable && value && (
+            <Button
+              onClick={() => {
+                onChange('');
+                setOpen(false);
+              }}
+            >
+              Borrar fecha
+            </Button>
+          )}
+        </div>
+      </Sheet>
+    </>
+  );
+}
+
+/** Selector en rueda (scroll-snap) para valores numéricos, accesible con teclado. */
+export function WheelPicker({
+  value,
+  onChange,
+  min,
+  max,
+  step,
+  format,
+  label,
+}: {
+  value: number;
+  onChange: (v: number) => void;
+  min: number;
+  max: number;
+  step: number;
+  format: (v: number) => string;
+  label: string;
+}) {
+  const ref = useRef<HTMLDivElement>(null);
+  const ITEM = 40;
+  const count = Math.round((max - min) / step) + 1;
+  const idx = Math.max(0, Math.min(count - 1, Math.round((value - min) / step)));
+  const settle = useRef<number | null>(null);
+  const userScroll = useRef(false);
+  useEffect(() => {
+    const el = ref.current;
+    if (!el || userScroll.current) return;
+    el.scrollTop = idx * ITEM;
+  }, [idx]);
+  const valAt = (i: number) => Math.round((min + i * step) * 1000) / 1000;
+  return (
+    <div className="wheel">
+      <div className="wheel-highlight" aria-hidden="true" />
+      <div
+        ref={ref}
+        className="wheel-scroll"
+        role="slider"
+        tabIndex={0}
+        aria-label={label}
+        aria-valuemin={min}
+        aria-valuemax={max}
+        aria-valuenow={valAt(idx)}
+        aria-valuetext={format(valAt(idx))}
+        onKeyDown={(e) => {
+          if (e.key === 'ArrowUp') {
+            e.preventDefault();
+            onChange(valAt(Math.max(0, idx - 1)));
+          } else if (e.key === 'ArrowDown') {
+            e.preventDefault();
+            onChange(valAt(Math.min(count - 1, idx + 1)));
+          }
+        }}
+        onScroll={(e) => {
+          userScroll.current = true;
+          const top = e.currentTarget.scrollTop;
+          if (settle.current) window.clearTimeout(settle.current);
+          settle.current = window.setTimeout(() => {
+            userScroll.current = false;
+            const i = Math.max(0, Math.min(count - 1, Math.round(top / ITEM)));
+            if (i !== idx) onChange(valAt(i));
+          }, 90);
+        }}
+      >
+        <div style={{ height: ITEM * 2 }} />
+        {Array.from({ length: count }, (_, i) => (
+          <div key={i} className={cx('wheel-item', i === idx && 'active')} style={{ height: ITEM }} onClick={() => onChange(valAt(i))}>
+            {format(valAt(i))}
+          </div>
+        ))}
+        <div style={{ height: ITEM * 2 }} />
+      </div>
+    </div>
   );
 }
 
@@ -337,6 +676,7 @@ export function Sheet({
   children,
   footer,
   size = 'md',
+  action,
 }: {
   open: boolean;
   onClose: () => void;
@@ -344,6 +684,8 @@ export function Sheet({
   children: ReactNode;
   footer?: ReactNode;
   size?: 'md' | 'lg' | 'full';
+  /** Cabecera estilo iOS: «Cancelar · Título · Acción». */
+  action?: { label: string; onClick: () => void; disabled?: boolean };
 }) {
   const ref = useRef<HTMLDivElement>(null);
   const titleId = useId();
@@ -368,14 +710,28 @@ export function Sheet({
       <div className="sheet-backdrop" onClick={onClose} />
       <div ref={ref} className={cx('sheet-panel', `sheet-${size}`)} role="dialog" aria-modal="true" aria-labelledby={titleId} tabIndex={-1}>
         <div className="sheet-grabber" aria-hidden="true" />
-        <div className="sheet-header">
-          <h2 id={titleId} className="sheet-title">
-            {title}
-          </h2>
-          <IconButton label="Cerrar" onClick={onClose} className="sheet-close">
-            <X size={18} />
-          </IconButton>
-        </div>
+        {action ? (
+          <div className="sheet-header sheet-header-ios">
+            <button type="button" className="sheet-nav-btn" onClick={onClose}>
+              Cancelar
+            </button>
+            <h2 id={titleId} className="sheet-title">
+              {title}
+            </h2>
+            <button type="button" className="sheet-nav-btn strong" onClick={action.onClick} disabled={action.disabled}>
+              {action.label}
+            </button>
+          </div>
+        ) : (
+          <div className="sheet-header">
+            <h2 id={titleId} className="sheet-title">
+              {title}
+            </h2>
+            <IconButton label="Cerrar" onClick={onClose} className="sheet-close">
+              <X size={18} />
+            </IconButton>
+          </div>
+        )}
         <div className="sheet-body">{children}</div>
         {footer && <div className="sheet-footer">{footer}</div>}
       </div>

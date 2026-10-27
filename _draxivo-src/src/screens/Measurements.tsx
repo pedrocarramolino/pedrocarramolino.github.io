@@ -8,7 +8,7 @@ import { fmtDate, fmtDateShort, today } from '../lib/dates';
 import { MEASUREMENTS } from '../lib/labels';
 import { fmtLength, fromDisplayLength, lUnit, num, toDisplayLength } from '../lib/units';
 import { LineChart } from '../ui/charts';
-import { Button, Empty, Field, IconButton, Input, List, Loading, NumberInput, Page, Row, Section, Select, Sheet, useConfirm } from '../ui/kit';
+import { DateInput, Button, Empty, Field, IconButton, Input, List, Loading, NumberInput, Page, Row, Section, Select, Sheet, useConfirm } from '../ui/kit';
 
 const fmtVal = (m: { type: MeasurementType; value: number }) => (m.type === 'grasa' ? `${num(m.value, 1)} %` : fmtLength(m.value));
 
@@ -153,7 +153,7 @@ export function MeasurementsScreen() {
             <NumberInput value={f.value} onChange={(v) => setF({ ...f, value: v })} />
           </Field>
           <Field label="Fecha">
-            <Input type="date" value={f.date} max={today()} onChange={(e) => setF({ ...f, date: e.target.value })} />
+            <DateInput value={f.date} max={today()} onChange={(v) => setF({ ...f, date: v })} label="Fecha" />
           </Field>
           <Field label="Nota">
             <Input value={f.note} onChange={(e) => setF({ ...f, note: e.target.value })} maxLength={200} />
