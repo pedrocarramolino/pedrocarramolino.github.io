@@ -689,21 +689,33 @@ export function Sheet({
 }) {
   const ref = useRef<HTMLDivElement>(null);
   const titleId = useId();
+  // Las pantallas pasan un onClose nuevo en cada render. Se guarda en una referencia para que
+  // el efecto de apertura dependa sólo de `open`: si dependiera de onClose, cada pulsación de
+  // teclado en un campo de la hoja re-ejecutaría el efecto, devolvería el foco al elemento
+  // anterior y cerraría el teclado en iOS.
+  const onCloseRef = useRef(onClose);
+  onCloseRef.current = onClose;
   useEffect(() => {
     if (!open) return;
     const prev = document.activeElement as HTMLElement | null;
     document.body.classList.add('sheet-open');
     const onKey = (e: KeyboardEvent) => {
-      if (e.key === 'Escape') onClose();
+      if (e.key === 'Escape') onCloseRef.current();
     };
     window.addEventListener('keydown', onKey);
-    window.setTimeout(() => ref.current?.querySelector<HTMLElement>('[data-autofocus]')?.focus() ?? ref.current?.focus(), 30);
+    const t = window.setTimeout(() => {
+      const panel = ref.current;
+      // No roba el foco si el usuario ya está escribiendo dentro de la hoja.
+      if (!panel || panel.contains(document.activeElement)) return;
+      (panel.querySelector<HTMLElement>('[data-autofocus]') ?? panel).focus({ preventScroll: true });
+    }, 30);
     return () => {
+      window.clearTimeout(t);
       window.removeEventListener('keydown', onKey);
       if (!document.querySelector('.sheet-panel')) document.body.classList.remove('sheet-open');
-      prev?.focus?.();
+      if (prev && prev.isConnected) prev.focus?.({ preventScroll: true });
     };
-  }, [open, onClose]);
+  }, [open]);
   if (!open) return null;
   return createPortal(
     <div className="sheet-root">
@@ -888,6 +900,23 @@ export function Scale({ value, onChange, label, low, high }: { value: number | n
         <span>{low}</span>
         <span>{high}</span>
       </div>
+    </div>
+  );
+}
+
+/** Control − valor + para ajustar números con el dedo. */
+export function Stepper({ value, onChange, min = 0, max = 999, step = 1, label, format }: { value: number; onChange: (v: number) => void; min?: number; max?: number; step?: number; label: string; format?: (v: number) => string }) {
+  return (
+    <div className="stepper-ctl" role="group" aria-label={label}>
+      <button type="button" className="stepper-btn" onClick={() => onChange(Math.max(min, value - step))} disabled={value <= min} aria-label={`Reducir ${label}`}>
+        −
+      </button>
+      <output className="stepper-value" aria-live="polite">
+        {format ? format(value) : value}
+      </output>
+      <button type="button" className="stepper-btn" onClick={() => onChange(Math.min(max, value + step))} disabled={value >= max} aria-label={`Aumentar ${label}`}>
+        +
+      </button>
     </div>
   );
 }

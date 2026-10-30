@@ -27,6 +27,7 @@ import { ReviewFlow } from '../screens/ReviewFlow';
 import { Planner } from '../screens/Planner';
 import { Profile, DataScreen, AboutScreen } from '../screens/Profile';
 import { Onboarding } from '../screens/Onboarding';
+import { Generator } from '../screens/Generator';
 
 const TABS = [
   { id: 'home', label: 'Inicio', path: '/', icon: House },
@@ -75,6 +76,7 @@ function Screen() {
     case 'routines':
       if (!b) return <Routines />;
       if (b === 'new') return <RoutineEditor id={null} />;
+      if (b === 'generate') return <Generator />;
       if (c === 'edit') return <RoutineEditor id={b} />;
       return <RoutineDetail id={b} />;
     case 'exercises':

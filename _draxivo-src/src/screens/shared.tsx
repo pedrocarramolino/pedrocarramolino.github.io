@@ -1,4 +1,4 @@
-import { useMemo, useState } from 'react';
+import { useDeferredValue, useMemo, useState } from 'react';
 import { Check, Plus, Search } from 'lucide-react';
 import type { Equipment, Exercise, MovementType, MuscleGroup, TrackingType } from '../db/types';
 import { useQuery } from '../app/hooks';
@@ -68,12 +68,13 @@ export function ExercisePicker({
   const [equip, setEquip] = useState<Equipment | ''>('');
   const [sel, setSel] = useState<string[]>([]);
   const [creating, setCreating] = useState(false);
+  const deferredQ = useDeferredValue(q);
   const list = useMemo(() => {
-    const nq = normalize(q.trim());
+    const nq = normalize(deferredQ.trim());
     return (all ?? []).filter(
       (e) => (!nq || normalize(e.name).includes(nq)) && (!muscle || e.primaryMuscle === muscle || e.secondaryMuscles.includes(muscle)) && (!equip || e.equipment === equip),
     );
-  }, [all, q, muscle, equip]);
+  }, [all, deferredQ, muscle, equip]);
   const close = () => {
     setSel([]);
     setQ('');
@@ -101,7 +102,7 @@ export function ExercisePicker({
       >
         <div className="search">
           <Search size={18} />
-          <Input type="search" placeholder="Buscar ejercicio" value={q} onChange={(e) => setQ(e.target.value)} aria-label="Buscar ejercicio" />
+          <Input type="search" placeholder="Buscar ejercicio" value={q} onChange={(e) => setQ(e.target.value)} aria-label="Buscar ejercicio" enterKeyHint="search" autoComplete="off" autoCorrect="off" spellCheck={false} data-autofocus />
         </div>
         <MuscleChips value={muscle} onChange={setMuscle} />
         <div className="chips">
@@ -125,6 +126,8 @@ export function ExercisePicker({
                 key={e.id}
                 type="button"
                 className="row row-button"
+                // Evita que el buscador pierda el foco (y se cierre el teclado) al elegir un resultado.
+                onMouseDown={(ev) => ev.preventDefault()}
                 aria-pressed={multi ? on : undefined}
                 onClick={() => (multi ? setSel((s) => (on ? s.filter((x) => x !== e.id) : [...s, e.id])) : done([e.id]))}
               >

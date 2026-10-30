@@ -1,7 +1,7 @@
 import type { Equipment, Exercise, MovementType, MuscleGroup, TrackingType } from './types';
 
 /** Versión de la biblioteca inicial. Al aumentarla se añaden los ejercicios nuevos sin duplicar. */
-export const LIBRARY_VERSION = 1;
+export const LIBRARY_VERSION = 2;
 
 type Row = [string, string, MuscleGroup, MuscleGroup[], Equipment, MovementType, TrackingType, string];
 
@@ -92,6 +92,7 @@ const ROWS: Row[] = [
   ['curl-femoral-tumbado', 'Curl femoral tumbado', 'isquios', ['gemelos'], 'maquina', 'aislamiento', W, 'Boca abajo, flexiona las rodillas llevando los talones hacia los glúteos.'],
   ['curl-femoral-sentado', 'Curl femoral sentado', 'isquios', [], 'maquina', 'aislamiento', W, 'Sentado con los muslos sujetos, flexiona las rodillas.'],
   ['buenos-dias', 'Buenos días', 'isquios', ['espalda', 'gluteos'], 'barra', 'compuesto', W, 'Barra en la espalda, inclina el torso desde la cadera con la espalda neutra.'],
+  ['peso-muerto-una-pierna', 'Peso muerto a una pierna', 'isquios', ['gluteos'], 'peso_corporal', 'compuesto', BW, 'De pie sobre una pierna con la rodilla ligeramente flexionada. Inclina el torso llevando la otra pierna atrás hasta notar estiramiento y vuelve a la posición erguida.'],
   ['nordic-curl', 'Curl nórdico', 'isquios', [], 'peso_corporal', 'aislamiento', BW, 'De rodillas con los tobillos sujetos, baja el torso lentamente hacia delante.'],
   // Glúteos
   ['hip-thrust', 'Hip thrust con barra', 'gluteos', ['isquios'], 'barra', 'compuesto', W, 'Espalda alta apoyada en el banco, eleva la cadera hasta alinear torso y muslos.'],
@@ -105,6 +106,7 @@ const ROWS: Row[] = [
   ['gemelo-de-pie', 'Elevación de gemelos de pie', 'gemelos', [], 'maquina', 'aislamiento', W, 'Eleva los talones al máximo y baja hasta notar estiramiento.'],
   ['gemelo-sentado', 'Elevación de gemelos sentado', 'gemelos', [], 'maquina', 'aislamiento', W, 'Rodillas a 90°, eleva los talones con control.'],
   ['gemelo-prensa', 'Gemelos en prensa', 'gemelos', [], 'maquina', 'aislamiento', W, 'En la prensa, empuja la plataforma con la punta de los pies.'],
+  ['gemelo-peso-corporal', 'Elevación de gemelos a una pierna', 'gemelos', [], 'peso_corporal', 'aislamiento', BW, 'De pie sobre un escalón con una pierna, apóyate con la mano. Sube sobre la punta del pie y baja el talón por debajo del escalón.'],
   // Abdominales
   ['plancha', 'Plancha', 'abdominales', ['hombros'], 'peso_corporal', 'aislamiento', 'duration', 'Apoyado en antebrazos y puntas, mantén el cuerpo en línea.'],
   ['plancha-lateral', 'Plancha lateral', 'abdominales', [], 'peso_corporal', 'aislamiento', 'duration', 'De lado sobre un antebrazo, mantén la cadera elevada.'],

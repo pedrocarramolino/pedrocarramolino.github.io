@@ -11,6 +11,7 @@ import { fmtWeight } from '../lib/units';
 import { ActionMenu, Button, Empty, IconButton, List, Loading, Page, Row, Section, Sheet, Tag, cx } from '../ui/kit';
 import { useExerciseMap, useRoutines, useStartWorkout, useWorkouts } from './shared';
 import { useRoutineActions } from './Routines';
+import { ExerciseArt } from '../ui/ExerciseArt';
 
 export function RoutineDetail({ id }: { id: string }) {
   const { settings } = useSettings();
@@ -116,7 +117,8 @@ export function RoutineDetail({ id }: { id: string }) {
               return (
                 <div key={e.id} className={cx('panel', e.supersetId && 'wex superset')} style={{ marginTop: 0 }}>
                   <div className="split">
-                    <button className="link" style={{ textAlign: 'left', fontSize: 16 }} onClick={() => navigate(`/exercises/${e.exerciseId}`)}>
+                    <button className="link" style={{ textAlign: 'left', fontSize: 16, display: 'flex', alignItems: 'center', gap: 12 }} onClick={() => navigate(`/exercises/${e.exerciseId}`)}>
+                      <ExerciseArt exercise={ex} size={56} />
                       {ex?.name ?? 'Ejercicio eliminado'}
                     </button>
                     <span className="small muted">Descanso {fmtSeconds(e.restSec ?? settings.defaultRestSec)}</span>

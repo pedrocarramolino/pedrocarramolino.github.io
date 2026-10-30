@@ -1,5 +1,5 @@
 import { useMemo, useState } from 'react';
-import { Archive, Copy, Ellipsis, Folder, FolderPlus, ListChecks, Pencil, Play, Plus, Search, Trash2 } from 'lucide-react';
+import { Archive, ChevronRight, Copy, WandSparkles, Ellipsis, Folder, FolderPlus, ListChecks, Pencil, Play, Plus, Search, Trash2 } from 'lucide-react';
 import type { Exercise, MuscleGroup, Routine } from '../db/types';
 import { MUSCLES } from '../lib/labels';
 import { ExerciseArt } from '../ui/ExerciseArt';
@@ -9,7 +9,7 @@ import { useSettings, useToast } from '../app/context';
 import { deleteFolder, deleteRoutine, duplicateRoutine, estimateRoutineMinutes, listFolders, saveFolder, saveRoutine, setRoutineArchived } from '../db/repo';
 import { BUILTIN_TEMPLATES, routineFromTemplate } from '../db/templates';
 import { fmtMinutes } from '../lib/dates';
-import { ActionMenu, Button, Empty, Field, IconButton, Input, List, Loading, Page, Row, Section, Sheet, Tag, useConfirm } from '../ui/kit';
+import { ActionMenu, Button, Empty, Field, IconButton, Input, List, Loading, Page, Row, Section, Sheet, Tag, useConfirm, Card, IconTile } from '../ui/kit';
 import { MuscleChips, normalize, useExercises, useRoutines, useStartWorkout } from './shared';
 
 export function useRoutineActions() {
@@ -146,6 +146,21 @@ export function Routines() {
         <Input type="search" placeholder="Buscar rutinas" value={q} onChange={(e) => setQ(e.target.value)} aria-label="Buscar rutinas" />
       </div>
       {usedMuscles.length > 0 && <MuscleChips value={cat} onChange={setCat} only={usedMuscles} />}
+
+      <Card className="mt" onClick={() => navigate('/routines/generate')} ariaLabel="Generar rutina según músculos y tiempo">
+        <div className="card-row">
+          <IconTile tone="dark">
+            <WandSparkles size={22} />
+          </IconTile>
+          <div className="grow">
+            <div className="card-title" style={{ fontSize: 16 }}>
+              Generar rutina
+            </div>
+            <div className="card-sub">Elige músculos, tiempo y material, y revisa la propuesta antes de guardarla.</div>
+          </div>
+          <ChevronRight size={18} className="row-chevron" />
+        </div>
+      </Card>
 
       <div className="btn-row mt">
         <Button variant="tinted" icon={<Plus size={18} />} onClick={() => navigate('/routines/new')}>

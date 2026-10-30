@@ -10,6 +10,7 @@ import { fmtMinutes, fmtSeconds } from '../lib/dates';
 import { fromDisplayWeight, toDisplayWeight, wUnit } from '../lib/units';
 import { ActionMenu, Button, Empty, Field, IconButton, Input, Loading, NumberInput, Page, Section, Select, Sheet, TextArea, cx, useConfirm } from '../ui/kit';
 import { ReorderList } from '../ui/reorder';
+import { ExerciseArt } from '../ui/ExerciseArt';
 import { ExercisePicker, useExerciseMap } from './shared';
 import { uid } from '../lib/id';
 
@@ -179,6 +180,7 @@ export function RoutineEditor({ id }: { id: string | null }) {
             return (
               <div key={e.id} className={cx('wex', e.supersetId && 'superset')} style={{ marginTop: 0 }}>
                 <div className="wex-head">
+                  <ExerciseArt exercise={ex} size={64} />
                   <div className="wex-name">
                     <h3>
                       {i + 1}. {ex?.name ?? 'Ejercicio eliminado'}
@@ -301,7 +303,12 @@ export function RoutineEditor({ id }: { id: string | null }) {
       <Sheet open={reorder} onClose={() => setReorder(false)} title="Reordenar ejercicios">
         <p className="small muted">Arrastra desde el asa o usa las flechas.</p>
         <div className="mt">
-          <ReorderList items={r.exercises} getKey={(e) => e.id} label={(e) => exMap.get(e.exerciseId)?.name ?? 'ejercicio'} render={(e) => <span className="row-title">{exMap.get(e.exerciseId)?.name}</span>} onChange={(exercises) => set({ exercises })} />
+          <ReorderList items={r.exercises} getKey={(e) => e.id} label={(e) => exMap.get(e.exerciseId)?.name ?? 'ejercicio'} render={(e) => (
+              <span style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+                <ExerciseArt exercise={exMap.get(e.exerciseId)} size={40} />
+                <span className="row-title">{exMap.get(e.exerciseId)?.name}</span>
+              </span>
+            )} onChange={(exercises) => set({ exercises })} />
         </div>
       </Sheet>
 

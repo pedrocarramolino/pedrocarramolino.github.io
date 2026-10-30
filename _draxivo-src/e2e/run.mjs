@@ -264,6 +264,136 @@ await step('Medidas corporales', async () => {
   await page.getByText('Últimos valores').waitFor();
 });
 
+await step('Teclado: buscador de ejercicios escribiendo letra a letra', async () => {
+  await go('/routines/new');
+  await page.getByRole('button', { name: 'Añadir ejercicios' }).click();
+  const s = page.getByRole('searchbox', { name: 'Buscar ejercicio' });
+  await s.click();
+  const frase = 'press inclinado con mancuernas';
+  await page.keyboard.type(frase, { delay: 35 });
+  assert((await s.inputValue()) === frase, 'texto incompleto: ' + (await s.inputValue()));
+  assert(await s.evaluate((el) => el === document.activeElement), 'el buscador perdió el foco');
+  await page.getByRole('button', { name: /^Press inclinado con mancuernas/ }).click();
+  assert((await s.inputValue()) === frase, 'se perdió el texto al seleccionar');
+  assert(await s.evaluate((el) => el === document.activeElement), 'el foco salió del buscador al seleccionar');
+  await s.press('Control+A');
+  await page.keyboard.type('remo con barra', { delay: 35 });
+  await page.getByRole('button', { name: /^Remo con barra/ }).click();
+  await page.getByRole('button', { name: 'Añadir 2' }).click();
+  await page.locator('.wex-name h3', { hasText: 'Press inclinado con mancuernas' }).waitFor();
+  await page.locator('.wex-name h3', { hasText: 'Remo con barra' }).waitFor();
+  // Otra hoja con texto (nota del peso): también debe escribir de forma continua.
+  await go('/');
+  await page.getByRole('button', { name: 'Registrar peso' }).first().click();
+  const nota = page.getByPlaceholder('Cómo te sientes, cambios, etc.');
+  await nota.click();
+  await page.keyboard.type('en ayunas tras dormir bien', { delay: 30 });
+  assert((await nota.inputValue()) === 'en ayunas tras dormir bien', 'la nota se cortó: ' + (await nota.inputValue()));
+  await page.getByRole('button', { name: 'Cancelar' }).click();
+});
+
+const leerTarjetas = () =>
+  page.locator('.gen-item').evaluateAll((els) => els.map((e) => e.querySelector('.card-sub')?.textContent ?? ''));
+const minutosEstimados = async () => Number((await page.locator('.gen-time .hero-number').innerText()).replace(/[^\d]/g, ''));
+
+await step('Generador: «bíceps y tríceps» en 45 minutos', async () => {
+  await go('/routines/generate');
+  await page.getByLabel('Qué quieres entrenar').fill('Quiero entrenar bíceps y tríceps durante 45 minutos');
+  assert(await page.getByRole('button', { name: 'Bíceps', exact: true }).getAttribute('aria-pressed') === 'true', 'no detectó bíceps');
+  assert(await page.getByRole('radio', { name: '45 min' }).getAttribute('aria-checked') === 'true', 'no detectó 45 min');
+  await page.getByRole('button', { name: 'Generar rutina' }).click();
+  await page.locator('.gen-item').first().waitFor();
+  const subs = await leerTarjetas();
+  assert(subs.length >= 4, 'muy pocos ejercicios: ' + subs.length);
+  assert(subs.every((t) => /^(Bíceps|Tríceps)/.test(t)), 'ejercicios de otros músculos: ' + subs.join(' | '));
+  const min = await minutosEstimados();
+  assert(min >= 35 && min <= 47, 'duración no razonable: ' + min);
+  const arts = await page.locator('.gen-item .exercise-art').count();
+  assert(arts === subs.length, 'faltan ilustraciones en la propuesta');
+  await shot('11-generador');
+});
+
+await step('Generador: pecho 20 min con mancuernas, editar, sustituir y guardar y empezar', async () => {
+  await go('/routines');
+  await go('/routines/generate');
+  await page.getByRole('button', { name: 'Pecho', exact: true }).click();
+  await page.getByRole('radio', { name: '20 min' }).click();
+  await page.getByRole('button', { name: 'Mancuernas', exact: true }).click();
+  await page.getByRole('button', { name: 'Generar rutina' }).click();
+  await page.locator('.gen-item').first().waitFor();
+  const subs = await leerTarjetas();
+  assert(subs.every((t) => /^Pecho · (Mancuernas|Peso corporal)/.test(t)), 'material o músculo incorrecto: ' + subs.join(' | '));
+  assert((await minutosEstimados()) <= 21, 'excede 20 min');
+  // Editar series del primero y comprobar que la duración se recalcula.
+  const antes = await minutosEstimados();
+  await page.locator('.gen-item').first().getByRole('button', { name: /^Editar series/ }).click();
+  await page.getByRole('button', { name: 'Aumentar series', exact: true }).click();
+  await page.keyboard.press('Escape');
+  assert((await minutosEstimados()) > antes, 'la duración no se recalculó');
+  // Sustituir el segundo por una alternativa y eliminar el último.
+  const nombre2 = await page.locator('.gen-item').nth(1).locator('.card-title').innerText();
+  await page.locator('.gen-item').nth(1).getByRole('button', { name: /^Sustituir/ }).click();
+  await page.getByRole('dialog').locator('.row-button').first().click();
+  assert((await page.locator('.gen-item').nth(1).locator('.card-title').innerText()) !== nombre2, 'no se sustituyó');
+  const n = await page.locator('.gen-item').count();
+  await page.locator('.gen-item').last().getByRole('button', { name: /^Eliminar/ }).click();
+  assert((await page.locator('.gen-item').count()) === n - 1, 'no se eliminó');
+  await page.getByRole('button', { name: 'Guardar y empezar' }).click();
+  await page.getByRole('button', { name: 'Completar serie', exact: true }).waitFor();
+  const press = page.locator('section.wex').first();
+  await press.getByLabel(/^Peso (de calentamiento|serie) 1/).first().fill('20');
+  await press.getByLabel(/^Repeticiones (de calentamiento|serie) 1/).first().fill('10');
+  await page.getByRole('button', { name: 'Completar serie', exact: true }).click();
+  await page.getByRole('timer').waitFor();
+  await page.getByRole('button', { name: 'Descartar entrenamiento' }).click();
+  await page.getByRole('alertdialog').getByRole('button', { name: 'Descartar' }).click();
+  await page.getByRole('heading', { name: 'Hoy' }).waitFor();
+  await go('/routines');
+  await page.getByText(/^Pecho · 20 min/).first().waitFor();
+});
+
+await step('Ilustraciones: cada ejercicio de la biblioteca tiene la suya', async () => {
+  await go('/exercises');
+  const rows = await page.locator('.list .row-button').count();
+  const data = await page.locator('.list .row-button .exercise-art').evaluateAll((els) => els.map((e) => e.getAttribute('data-template')));
+  assert(rows > 100 && data.length === rows, `filas ${rows}, ilustraciones ${data.length}`);
+  assert(data.every(Boolean), 'ejercicio sin plantilla');
+  assert(new Set(data).size >= 90, 'pocas ilustraciones distintas: ' + new Set(data).size);
+  await go('/exercises/ex-sentadilla');
+  await page.locator('.ex-hero svg').waitFor();
+  await page.getByText('Posición inicial').waitFor();
+  await page.getByText('Posición final').waitFor();
+});
+
+await step('Centrado del número de sesiones (1 y 2 dígitos, varias anchuras)', async () => {
+  const centered = async (sel) =>
+    page.locator(sel).first().evaluate((ctl) => {
+      const out = ctl.querySelector('.stepper-value');
+      const n = out.firstChild ? document.createRange() : null;
+      n.selectNodeContents(out);
+      const t = n.getBoundingClientRect();
+      const o = out.getBoundingClientRect();
+      const c = ctl.getBoundingClientRect();
+      return { dx: Math.abs(t.left + t.width / 2 - (o.left + o.width / 2)), dy: Math.abs(t.top + t.height / 2 - (c.top + c.height / 2)), w: o.width, left: o.left - c.left };
+    });
+  for (const width of [320, 390, 834]) {
+    await page.setViewportSize({ width, height: 900 });
+    await go('/plan');
+    const ctl = '.stepper-ctl[aria-label="sesiones objetivo"]';
+    const one = await centered(ctl);
+    for (let i = 0; i < 12; i++) {
+      const v = Number(await page.locator(`${ctl} .stepper-value`).innerText());
+      if (v >= 10) break;
+      await page.getByRole('button', { name: 'Aumentar sesiones objetivo' }).click();
+    }
+    const two = await centered(ctl);
+    assert(one.dx < 1.5 && one.dy < 1.5 && two.dx < 1.5 && two.dy < 1.5, `descentrado @${width}: ${JSON.stringify([one, two])}`);
+    assert(Math.abs(one.left - two.left) < 0.5 && Math.abs(one.w - two.w) < 0.5, 'el número desplaza el control');
+    await page.getByRole('button', { name: 'Restablecer al predeterminado' }).click();
+  }
+  await page.setViewportSize({ width: 390, height: 844 });
+});
+
 await step('Planificación semanal', async () => {
   await go('/plan');
   await page.getByRole('button', { name: /^Añadir al/ }).last().click();

@@ -1,4 +1,4 @@
-import { CalendarDays, History as HistoryIcon, ListChecks, Play, Plus } from 'lucide-react';
+import { CalendarDays, History as HistoryIcon, ListChecks, Play, Plus, WandSparkles } from 'lucide-react';
 import { useQuery } from '../app/hooks';
 import { navigate } from '../app/router';
 import { getActiveWorkout, listPlan } from '../db/repo';
@@ -87,6 +87,7 @@ export function Train() {
 
       <Section>
         <List>
+          <Row icon={<WandSparkles size={20} />} title="Generar rutina" subtitle="Según músculos, tiempo y material" onClick={() => navigate('/routines/generate')} />
           <Row icon={<CalendarDays size={20} />} title="Planificación semanal" onClick={() => navigate('/plan')} />
           <Row icon={<HistoryIcon size={20} />} title="Historial de entrenamientos" onClick={() => navigate('/history')} />
           <Row icon={<ListChecks size={20} />} title="Biblioteca de ejercicios" onClick={() => navigate('/exercises')} />

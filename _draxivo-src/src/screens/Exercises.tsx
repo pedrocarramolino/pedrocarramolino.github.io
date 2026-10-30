@@ -1,7 +1,7 @@
 import { useMemo, useState } from 'react';
 import { Ellipsis, Plus, Search } from 'lucide-react';
 import type { Equipment, MuscleGroup } from '../db/types';
-import { useQuery } from '../app/hooks';
+import { useMediaQuery, useQuery } from '../app/hooks';
 import { goBack, navigate } from '../app/router';
 import { useToast } from '../app/context';
 import { deleteExercise, getExercise, saveExercise } from '../db/repo';
@@ -98,6 +98,7 @@ type Metric = 'e1rm' | 'maxWeight' | 'volume' | 'maxReps' | 'totalReps' | 'maxDu
 export function ExerciseDetail({ id }: { id: string }) {
   const ex = useQuery(() => getExercise(id), ['exercises'], [id]);
   const all = useExercises(false);
+  const reduceMotion = useMediaQuery('(prefers-reduced-motion: reduce)');
   const workouts = useWorkouts();
   const toast = useToast();
   const confirm = useConfirm();
@@ -183,7 +184,17 @@ export function ExerciseDetail({ id }: { id: string }) {
     >
       {ex.archived && <p className="callout callout-neutral">Ejercicio archivado: no aparece al añadir ejercicios, pero su historial se conserva.</p>}
       <div className="ex-hero">
-        <ExerciseArt exercise={ex} size="fill" label={`Ilustración: ${EQUIPMENT[ex.equipment]}`} />
+        <ExerciseArt exercise={ex} size="fill" mode={reduceMotion ? 'static' : 'animated'} label={`Demostración de ${ex.name}`} />
+      </div>
+      <div className="pose-pair">
+        <figure>
+          <ExerciseArt exercise={ex} size="fill" pose="a" label={`${ex.name}: posición inicial`} />
+          <figcaption>Posición inicial</figcaption>
+        </figure>
+        <figure>
+          <ExerciseArt exercise={ex} size="fill" pose="b" label={`${ex.name}: posición final`} />
+          <figcaption>Posición final</figcaption>
+        </figure>
       </div>
       <h2 className="page-title-inline mt-lg">{ex.name}</h2>
       <p className="muted">

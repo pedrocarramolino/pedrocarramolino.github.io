@@ -7,7 +7,7 @@ import { useSettings, useToast } from '../app/context';
 import { deletePlanEntry, listPlan, listWeekGoals, savePlanEntry, setWeekGoal } from '../db/repo';
 import { goalForWeek } from '../domain/review';
 import { addDays, fmtDate, fmtRange, today, weekStart, weekday, WEEKDAYS, WEEKDAYS_ABBR } from '../lib/dates';
-import { ActionMenu, Button, IconButton, List, Loading, Page, Row, Section, Sheet, cx } from '../ui/kit';
+import { ActionMenu, Button, IconButton, List, Loading, Page, Row, Section, Sheet, cx, Stepper } from '../ui/kit';
 import { useRoutines, useStartWorkout, useWorkouts } from './shared';
 
 export function Planner() {
@@ -61,17 +61,7 @@ export function Planner() {
       <Section title="Objetivo de la semana">
         <List>
           <Row title="Sesiones objetivo" subtitle={override ? 'Ajustado para esta semana' : 'Valor predeterminado del perfil'}>
-            <div className="btn-row" style={{ flexWrap: 'nowrap', gap: 6 }}>
-              <IconButton label="Reducir objetivo" onClick={() => setWeekGoal(ws, Math.max(0, goal - 1))}>
-                −
-              </IconButton>
-              <strong className="tabular" style={{ minWidth: 20, textAlign: 'center' }}>
-                {goal}
-              </strong>
-              <IconButton label="Aumentar objetivo" onClick={() => setWeekGoal(ws, Math.min(14, goal + 1))}>
-                +
-              </IconButton>
-            </div>
+            <Stepper label="sesiones objetivo" value={goal} min={0} max={14} onChange={(v) => setWeekGoal(ws, v)} />
           </Row>
           {override && <Row title="Restablecer al predeterminado" onClick={() => setWeekGoal(ws, null)} />}
           <Row title="Planificado frente a realizado" value={`${doneCount}/${planned.length} planificadas · ${weekWorkouts.length} sesiones`} />

@@ -11,7 +11,7 @@ import { MEASUREMENTS, MUSCLES } from '../lib/labels';
 import { fmtSigned, fmtVolume, fmtWeight, num, toDisplayWeight } from '../lib/units';
 import { uid } from '../lib/id';
 import { HBars, LineChart } from '../ui/charts';
-import { Button, Field, Input, List, Loading, NumberInput, Page, Row, Scale, Section, Stat, TextArea, Toggle } from '../ui/kit';
+import { Button, Field, Input, List, Loading, Page, Row, Scale, Section, Stat, TextArea, Toggle, Stepper } from '../ui/kit';
 
 const STEPS = ['Resumen', 'Evolución física', 'Valoración', 'Conclusiones', 'Guardar'];
 
@@ -212,9 +212,13 @@ export function ReviewFlow({ id }: { id: string | null }) {
           <ConclusionsView c={r.conclusions} />
           <Section title="Objetivo para la semana siguiente">
             <div className="panel">
-              <Field label="Sesiones" hint="Propuesta basada en tu objetivo actual y tu recuperación. Puedes cambiarla.">
-                <NumberInput value={r.nextGoalSessions} onChange={(v) => setR({ ...r, nextGoalSessions: v })} decimals={false} max={21} />
-              </Field>
+              <div className="goal-field">
+                <div className="goal-field-text">
+                  <span className="field-label">Sesiones</span>
+                  <span className="field-hint">Propuesta según tu objetivo actual y tu recuperación. Puedes cambiarla.</span>
+                </div>
+                <Stepper label="sesiones de la próxima semana" value={r.nextGoalSessions ?? 0} min={0} max={21} onChange={(v) => setR({ ...r, nextGoalSessions: v })} />
+              </div>
               <Field label="Objetivo personal (opcional)">
                 <Input value={r.nextGoalText} onChange={(e) => setR({ ...r, nextGoalText: e.target.value })} maxLength={300} placeholder="Ej.: registrar el peso 3 días" />
               </Field>
