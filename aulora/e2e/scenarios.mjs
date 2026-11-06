@@ -103,13 +103,23 @@ export async function run({ browser, base, shots, admin }) {
       await page.getByLabel('Nombre *').fill(first);
       await page.getByLabel('Apellidos').fill(last);
       await page.getByLabel('Instrumento o especialidad').fill(inst);
+      if (first === 'Hugo') {
+        // borrar la duración y escribir 45: no debe quedar «0» ni «045»
+        const dur = page.getByLabel('Duración de la clase (min)');
+        await dur.fill('');
+        expect((await dur.inputValue()) === '', 'el campo vacío no debería mostrar 0');
+        await dur.pressSequentially('045');
+        expect((await dur.inputValue()) === '45', `duración mostrada: ${await dur.inputValue()}`);
+      }
       await page.getByRole('button', { name: 'Crear alumno' }).click();
       await page.waitForURL(/\/alumnos\/[A-Za-z0-9]{20}$/);
       await page.getByRole('heading', { name: `${first} ${last}` }).waitFor();
       students[first] = page.url().split('/').pop();
     }
-    const n = (await docs('students')).length;
-    expect(n === 3, `esperados 3 alumnos, hay ${n}`);
+    const all = await docs('students');
+    expect(all.length === 3, `esperados 3 alumnos, hay ${all.length}`);
+    const hugoMin = all.find((x) => x.first_name === 'Hugo')?.lesson_minutes;
+    expect(hugoMin === 45, `duración guardada de Hugo: ${hugoMin}`);
   });
 
   await step('foto del alumno: se reduce y se guarda rápido', async () => {

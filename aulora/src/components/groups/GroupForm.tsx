@@ -2,7 +2,7 @@
 import { useState } from 'react';
 import { useRouter } from 'next/navigation';
 import { Dialog } from '@/components/ui/overlay';
-import { Button, Field, LabeledInput, Select, Textarea } from '@/components/ui/controls';
+import { Button, Field, LabeledInput, NumberInput, Select, Textarea, rangeError } from '@/components/ui/controls';
 import { ColorPicker, StudentMultiPicker } from '@/components/ui/pickers';
 import { useAction, useLookup, useProfile } from '@/hooks/data';
 import { groupApi, type GroupInput } from '@/services/api';
@@ -28,12 +28,13 @@ export function GroupForm({ group, onClose }: { group?: Group; onClose: () => vo
     archived: group?.archived ?? false,
   }));
   const [memberIds, setMemberIds] = useState<string[]>(initialMembers);
+  const [minutes, setMinutes] = useState<number | null>(group?.lesson_minutes ?? profile.data?.default_lesson_minutes ?? 60);
   const [error, setError] = useState<string>();
   const set = <K extends keyof GroupInput>(k: K, v: GroupInput[K]) => setForm((f) => ({ ...f, [k]: v }));
 
   const save = useAction(
     async () => {
-      const clean = { ...form, name: form.name.trim(), usual_time: form.usual_time || null };
+      const clean = { ...form, name: form.name.trim(), usual_time: form.usual_time || null, lesson_minutes: minutes ?? 60 };
       const saved = editing ? await groupApi.update(group.id, clean) : await groupApi.create(clean);
       await groupApi.setMembers(saved.id, memberIds, initialMembers);
       return saved;
@@ -51,6 +52,8 @@ export function GroupForm({ group, onClose }: { group?: Group; onClose: () => vo
   const submit = (e: React.FormEvent) => {
     e.preventDefault();
     if (!form.name.trim()) return setError('El nombre del grupo es obligatorio');
+    const minutesProblem = rangeError(minutes, 5, 600, 'la duración (en minutos)');
+    if (minutesProblem) return setError(minutesProblem);
     setError(undefined);
     save.mutate(undefined);
   };
@@ -87,16 +90,9 @@ export function GroupForm({ group, onClose }: { group?: Group; onClose: () => vo
             </Select>
           </Field>
           <LabeledInput label="Hora habitual" type="time" value={form.usual_time ?? ''} onChange={(e) => set('usual_time', e.target.value)} />
-          <LabeledInput
-            label="Duración (min)"
-            type="number"
-            min={5}
-            max={600}
-            step={5}
-            inputMode="numeric"
-            value={form.lesson_minutes}
-            onChange={(e) => set('lesson_minutes', Number(e.target.value) || 0)}
-          />
+          <Field label="Duración (min)" hint="Entre 5 y 600 minutos">
+            <NumberInput value={minutes} onValueChange={setMinutes} maxLength={3} placeholder="60" />
+          </Field>
           <LabeledInput label="Aula o ubicación" value={form.location} onChange={(e) => set('location', e.target.value)} placeholder="Aula 3" />
         </div>
         <Field label="Descripción">

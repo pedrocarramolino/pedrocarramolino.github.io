@@ -81,3 +81,14 @@ describe('contraseñas', () => {
     expect(validateNewPassword('corta1', 'corta1')).toMatch(/no cumple/);
   });
 });
+
+describe('campos numéricos', () => {
+  it('quita ceros a la izquierda y caracteres no numéricos', async () => {
+    const { cleanDigits } = await import('@/components/ui/controls');
+    expect(cleanDigits('045')).toBe('45');
+    expect(cleanDigits('0')).toBe('0');
+    expect(cleanDigits('')).toBe('');
+    expect(cleanDigits('4a5')).toBe('45');
+    expect(cleanDigits('00090', 3)).toBe('90');
+  });
+});

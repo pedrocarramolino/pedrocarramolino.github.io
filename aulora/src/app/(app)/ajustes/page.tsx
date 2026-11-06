@@ -3,7 +3,7 @@ import { Suspense, useEffect, useState } from 'react';
 import { useSearchParams } from 'next/navigation';
 import { toast } from 'sonner';
 import { Download, LogOut, Monitor, Moon, Plus, Sun, Trash2 } from 'lucide-react';
-import { Button, Field, Input, LabeledInput, Segmented } from '@/components/ui/controls';
+import { Button, Field, Input, LabeledInput, NumberInput, Segmented, rangeError } from '@/components/ui/controls';
 import { Card, CardHeader, PageHeader } from '@/components/ui/display';
 import { useConfirm } from '@/components/ui/overlay';
 import { cn } from '@/components/ui/cn';
@@ -80,13 +80,18 @@ function ProfileCard() {
   const profile = useProfile();
   const p = profile.data!;
   const [name, setName] = useState(p.display_name);
-  const [start, setStart] = useState(p.day_start_hour);
-  const [end, setEnd] = useState(p.day_end_hour);
-  const [minutes, setMinutes] = useState(p.default_lesson_minutes);
+  const [start, setStart] = useState<number | null>(p.day_start_hour);
+  const [end, setEnd] = useState<number | null>(p.day_end_hour);
+  const [minutes, setMinutes] = useState<number | null>(p.default_lesson_minutes);
   const save = useAction(
     async () => {
-      if (end <= start) throw new Error('La hora de fin debe ser posterior a la de inicio');
-      return profileApi.update(p.id, { display_name: name.trim(), day_start_hour: start, day_end_hour: end, default_lesson_minutes: minutes });
+      const problem =
+        rangeError(start, 0, 23, 'la hora de inicio de la agenda') ??
+        rangeError(end, 1, 24, 'la hora de fin de la agenda') ??
+        rangeError(minutes, 5, 600, 'la duración por defecto (en minutos)');
+      if (problem) throw new Error(problem);
+      if (end! <= start!) throw new Error('La hora de fin debe ser posterior a la de inicio');
+      return profileApi.update(p.id, { display_name: name.trim(), day_start_hour: start!, day_end_hour: end!, default_lesson_minutes: minutes! });
     },
     { invalidate: ['profile'], success: 'Ajustes guardados' },
   );
@@ -102,9 +107,15 @@ function ProfileCard() {
         }}
       >
         <LabeledInput label="Tu nombre" value={name} onChange={(e) => setName(e.target.value)} className="sm:col-span-2" />
-        <LabeledInput label="La agenda empieza a las" type="number" min={0} max={23} value={start} onChange={(e) => setStart(Number(e.target.value))} hint="Hora (0–23)" />
-        <LabeledInput label="La agenda termina a las" type="number" min={1} max={24} value={end} onChange={(e) => setEnd(Number(e.target.value))} hint="Hora (1–24)" />
-        <LabeledInput label="Duración de clase por defecto (min)" type="number" min={5} max={600} step={5} value={minutes} onChange={(e) => setMinutes(Number(e.target.value))} />
+        <Field label="La agenda empieza a las" hint="Hora (0–23)">
+          <NumberInput value={start} onValueChange={setStart} maxLength={2} placeholder="8" />
+        </Field>
+        <Field label="La agenda termina a las" hint="Hora (1–24)">
+          <NumberInput value={end} onValueChange={setEnd} maxLength={2} placeholder="22" />
+        </Field>
+        <Field label="Duración de clase por defecto (min)" hint="Entre 5 y 600 minutos">
+          <NumberInput value={minutes} onValueChange={setMinutes} maxLength={3} placeholder="60" />
+        </Field>
         <div className="flex items-end justify-end sm:col-span-1">
           <Button type="submit" variant="primary" disabled={!dirty} loading={save.isPending}>
             Guardar
