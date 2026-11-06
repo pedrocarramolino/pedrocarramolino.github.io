@@ -2,13 +2,11 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
 import { useRouter } from 'next/navigation';
-import { useQuery } from '@tanstack/react-query';
 import { ArrowRight, CalendarDays, CalendarPlus, CheckSquare, FileText, Search, UserPlus, Users, UsersRound } from 'lucide-react';
 import { Avatar } from '@/components/ui/display';
 import { Kbd, Spinner } from '@/components/ui/controls';
 import { cn } from '@/components/ui/cn';
-import { studentName, useLookup } from '@/hooks/data';
-import { noteApi, searchApi, taskApi } from '@/services/api';
+import { studentName, useAllLessons, useAllNotes, useAllTasks, useLookup } from '@/hooks/data';
 import { matches, serverTerm } from '@/lib/search';
 import { fmt, shortWeekLabel, fromDateKey } from '@/lib/dates';
 import { NAV } from './nav';
@@ -43,15 +41,24 @@ export function CommandPalette({ onClose }: { onClose: () => void }) {
   const dq = useDebounced(q.trim());
   const term = serverTerm(dq);
 
-  const remote = useQuery({
-    queryKey: ['palette', term],
-    enabled: term.length >= 2,
-    queryFn: async () => {
-      const [tasks, notes, lessons] = await Promise.all([taskApi.search({ q: term }), noteApi.search(term), searchApi.lessons(term)]);
-      return { tasks: tasks.slice(0, 6), notes: notes.slice(0, 4), lessons: lessons.slice(0, 4) };
-    },
-    staleTime: 10_000,
-  });
+  // tareas y notas ya están en el dispositivo (en vivo); las clases se leen una vez
+  const allTasks = useAllTasks();
+  const allNotes = useAllNotes();
+  const allLessonsQ = useAllLessons(term.length >= 2);
+  const remote = {
+    isFetching: allLessonsQ.isFetching && term.length >= 2,
+    isPending: allTasks.isPending || allNotes.isPending || allLessonsQ.isPending,
+    data:
+      term.length >= 2
+        ? {
+            tasks: (allTasks.data ?? []).filter((t) => matches(`${t.title} ${t.description} ${t.notes}`, dq)).slice(0, 6),
+            notes: (allNotes.data ?? []).filter((n) => matches(n.body, dq)).slice(0, 4),
+            lessons: (allLessonsQ.data ?? [])
+              .filter((l) => matches(`${l.plan} ${l.notes} ${l.summary} ${l.next_goals} ${l.lesson_type} ${l.location}`, dq))
+              .slice(0, 4),
+          }
+        : undefined,
+  };
 
   const go = (href: string) => {
     onClose();
@@ -84,7 +91,7 @@ export function CommandPalette({ onClose }: { onClose: () => void }) {
     for (const g of lookup.groups.filter((g) => matches(`${g.name} ${g.subject} ${g.location} ${g.description}`, query)).slice(0, 4)) {
       out.push({ id: 'g' + g.id, section: 'Grupos', label: g.name, sub: g.subject, icon: <Users className="size-4" />, run: () => go(`/grupos/${g.id}`) });
     }
-    if (remote.data && term === serverTerm(query)) {
+    if (remote.data) {
       for (const t of remote.data.tasks.filter((t) => matches(`${t.title} ${t.description} ${t.notes}`, query))) {
         const who = t.group_id ? lookup.groupById.get(t.group_id)?.name : t.assignments.map((a) => lookup.studentById.get(a.student_id)?.first_name).filter(Boolean).join(', ');
         out.push({
@@ -120,7 +127,7 @@ export function CommandPalette({ onClose }: { onClose: () => void }) {
     out.push({ id: 'adv', section: 'Más', label: `Búsqueda avanzada de «${query}»`, icon: <Search className="size-4" />, run: () => go(`/buscar?q=${encodeURIComponent(query)}`) });
     return out;
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [q, lookup, remote.data, term]);
+  }, [q, lookup, remote.data]);
 
   useEffect(() => setSel(0), [q]);
   useEffect(() => {

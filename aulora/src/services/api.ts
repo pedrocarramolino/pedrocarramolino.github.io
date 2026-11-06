@@ -28,6 +28,7 @@ import {
   getDocsFromCache,
   getDocs,
   limit as qLimit,
+  onSnapshot,
   orderBy,
   query,
   runTransaction,
@@ -36,6 +37,7 @@ import {
   type DocumentData,
   type Query,
   type QueryConstraint,
+  type QueryDocumentSnapshot,
   type WriteBatch,
 } from 'firebase/firestore';
 import { firebaseAuth, firestore } from '@/lib/firebase';
@@ -220,6 +222,9 @@ export const profileApi = {
     safe(async () => {
       const id = uid();
       const pref = doc(db(), 'users', id);
+      // caso habitual: el perfil ya está en la caché del dispositivo, no hace falta ir al servidor
+      const cached = await getDocFromCache(pref).catch(() => null);
+      if (cached?.exists()) return false;
       const created = await runTransaction(db(), async (tx) => {
         const snap = await tx.get(pref);
         if (snap.exists()) return false;
@@ -989,3 +994,97 @@ export async function exportAll() {
     return { exported_at: now(), app: 'Aulora', version: 2, data: out };
   });
 }
+
+// =============================================================================
+// Consultas en vivo (onSnapshot)
+//
+// Muestran primero lo que hay en la caché del dispositivo (al instante) y se
+// actualizan solas con el servidor, también cuando cambias algo desde otro
+// dispositivo. La interfaz las usa a través de useLive (hooks/data.ts).
+// =============================================================================
+export interface LiveDef<T> {
+  subscribe(onData: (data: T, meta: { fromCache: boolean; empty: boolean }) => void, onError: (e: ApiError) => void): () => void;
+}
+
+function liveQuery<T>(build: () => Query<DocumentData>, map: (docs: QueryDocumentSnapshot<DocumentData>[]) => T): LiveDef<T> {
+  return {
+    subscribe: (onData, onError) =>
+      onSnapshot(
+        build(),
+        // también avisa cuando el servidor confirma lo que había en caché (p. ej. una lista vacía)
+        { includeMetadataChanges: true },
+        (s) => onData(map(s.docs), { fromCache: s.metadata.fromCache, empty: s.empty }),
+        (e) => onError(humanize(e)),
+      ),
+  };
+}
+
+const asList = <T,>(docs: QueryDocumentSnapshot<DocumentData>[]) => docs.map((d) => withId<T>(d.id, d.data()));
+const asTasks = (docs: QueryDocumentSnapshot<DocumentData>[]) => docs.map((d) => toTask(d.id, d.data()));
+const newestWeekFirst = (a: Task, b: Task) => b.week_start.localeCompare(a.week_start) || a.created_at.localeCompare(b.created_at);
+
+export const live = {
+  profile: (): LiveDef<Profile | null> => ({
+    subscribe: (onData, onError) =>
+      onSnapshot(
+        doc(db(), 'users', uid()),
+        { includeMetadataChanges: true },
+        (s) => onData(s.exists() ? ({ ...(s.data() as Profile), id: s.id } as Profile) : null, { fromCache: s.metadata.fromCache, empty: !s.exists() }),
+        (e) => onError(humanize(e)),
+      ),
+  }),
+  categories: () =>
+    liveQuery(() => col('categories'), (d) => asList<Category>(d).sort((a, b) => a.sort_order - b.sort_order || a.name.localeCompare(b.name))),
+  students: () =>
+    liveQuery(
+      () => col('students'),
+      (d) =>
+        asList<Student>(d)
+          .map((s) => ({ ...s, group_ids: s.group_ids ?? [] }))
+          .sort((a, b) => fullName(a).localeCompare(fullName(b), 'es')),
+    ),
+  groups: () => liveQuery(() => col('groups'), (d) => asList<Group>(d).sort((a, b) => a.name.localeCompare(b.name, 'es'))),
+  lessonsRange: (fromIso: string, toIso: string) =>
+    liveQuery(
+      () => query(col('lessons'), where('starts_at', '>=', new Date(fromIso).toISOString()), where('starts_at', '<', new Date(toIso).toISOString()), orderBy('starts_at')),
+      (d) => asList<Lesson>(d),
+    ),
+  lesson: (id: string): LiveDef<Lesson> => ({
+    subscribe: (onData, onError) =>
+      onSnapshot(
+        ref('lessons', id),
+        { includeMetadataChanges: true },
+        (s) => {
+          if (s.exists()) onData(withId<Lesson>(s.id, s.data()), { fromCache: s.metadata.fromCache, empty: false });
+          else if (!s.metadata.fromCache) onError(new ApiError('Clase no encontrada', 'not-found'));
+        },
+        (e) => onError(humanize(e)),
+      ),
+  }),
+  tasksWeek: (week: string) => liveQuery(() => query(col('tasks'), where('week_start', '==', week)), (d) => asTasks(d).sort(byWeekThenCreated)),
+  tasksWeeks: (from: string, to: string) =>
+    liveQuery(() => query(col('tasks'), where('week_start', '>=', from), where('week_start', '<=', to)), (d) => asTasks(d).sort(byWeekThenCreated)),
+  tasksStudent: (sid: string) => liveQuery(() => query(col('tasks'), where('student_ids', 'array-contains', sid)), (d) => asTasks(d).sort(newestWeekFirst)),
+  tasksGroup: (gid: string) => liveQuery(() => query(col('tasks'), where('group_id', '==', gid)), (d) => asTasks(d).sort(newestWeekFirst)),
+  allTasks: () => liveQuery(() => col('tasks'), (d) => asTasks(d).sort(newestWeekFirst)),
+  pending: () =>
+    liveQuery(
+      () => query(col('tasks'), where('has_pending', '==', true)),
+      (d) => asTasks(d).flatMap((t) => t.assignments.filter((a) => a.status === 'pending' || a.status === 'in_progress')),
+    ),
+  notes: (sid: string) => liveQuery(() => query(col('notes'), where('student_id', '==', sid)), (d) => asList<ProgressNote>(d).sort(byNotedDesc)),
+  allNotes: () => liveQuery(() => col('notes'), (d) => asList<ProgressNote>(d).sort(byNotedDesc)),
+  goals: (sid: string) =>
+    liveQuery(
+      () => query(col('goals'), where('student_id', '==', sid)),
+      (d) => {
+        const order = { active: 0, achieved: 1, dropped: 2 } as const;
+        return asList<Goal>(d).sort((a, b) => order[a.status] - order[b.status] || b.created_at.localeCompare(a.created_at));
+      },
+    ),
+  allGoals: () => liveQuery(() => col('goals'), (d) => asList<Goal>(d)),
+  activity: (n = 12) => liveQuery(() => query(col('activity'), orderBy('created_at', 'desc'), qLimit(n)), (d) => asList<ActivityEntry>(d)),
+};
+
+/** Todas las clases (para la búsqueda): se leen una vez y se filtran en el dispositivo. */
+export const allLessons = () => safe(async () => (await all<Lesson>('lessons')).sort((a, b) => b.starts_at.localeCompare(a.starts_at)));

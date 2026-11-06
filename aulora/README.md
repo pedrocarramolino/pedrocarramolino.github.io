@@ -75,6 +75,7 @@ Decisiones clave:
 - **Las operaciones de varios documentos son atómicas.** Por ejemplo, borrar un alumno elimina también sus clases, anotaciones, objetivos y asignaciones en lotes.
 - Las fotos se guardan como miniaturas JPEG de unos 10 KB dentro del documento del alumno, así que no hace falta configurar Storage.
 - **Guardado instantáneo.** Los cambios se guardan primero en el dispositivo (caché persistente de Firestore en IndexedDB) y se muestran al momento en todas las pantallas. Firebase los sincroniza en segundo plano y, si el servidor rechazara alguno, la app avisa y recarga los datos. Las fichas nuevas se precargan mientras se rellena el formulario. La fuente de verdad es siempre el servidor. `localStorage` solo se usa para la preferencia de tema.
+- **Listas en vivo.** Las pantallas leen Firestore con oyentes en tiempo real: muestran al instante lo que hay en el dispositivo y se actualizan solas, también cuando cambias algo desde otro dispositivo (Mac, iPad o iPhone) sin recargar. La búsqueda filtra sobre esos datos, sin pedir nada al servidor en cada tecla. Las pestañas, filtros y cambios de semana actualizan la URL sin ir al servidor. En `localStorage` solo se guarda, además del tema, una marca de que el dispositivo ya está sincronizado.
 - Las series recurrentes se guardan en una sola escritura. Su aviso de conflictos, que revisa meses de agenda, aparece justo después de guardar, con la opción «Deshacer serie». Las clases sueltas avisan antes de guardar.
 
 ---
@@ -152,7 +153,7 @@ Las pruebas usan los **emuladores oficiales de Firebase** (necesitan Java 11 o s
 ```bash
 npm test                        # Pruebas unitarias (recurrencia, conflictos, fechas, estados)
 npm run rules:test              # Reglas de seguridad de Firestore (9 casos)
-npm run e2e:build && npm run e2e  # 32 escenarios E2E con Playwright (escritorio, iPhone, iPad)
+npm run e2e:build && npm run e2e  # 33 escenarios E2E con Playwright (escritorio, iPhone, iPad)
 ```
 
 `npm run e2e:build` compila la app con la configuración de `.env.e2e` (proyecto de demostración `demo-aulora` y emuladores) sin tocar tu `.env.local`.

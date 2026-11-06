@@ -1,6 +1,8 @@
 'use client';
 import { useState } from 'react';
 import Link from 'next/link';
+import { useRouter } from 'next/navigation';
+import { prefetchOnIntent } from '@/lib/url';
 import { Clock, MapPin, Plus, Search, Users, UsersRound } from 'lucide-react';
 import { Badge, Button, Input } from '@/components/ui/controls';
 import { Avatar, Card, EmptyState, PageHeader, Skeleton } from '@/components/ui/display';
@@ -11,6 +13,7 @@ import { WEEKDAYS, durationLabel } from '@/lib/dates';
 import { matches } from '@/lib/search';
 
 export default function GroupsPage() {
+  const router = useRouter();
   const ui = useUi();
   const lookup = useLookup();
   const [q, setQ] = useState('');
@@ -69,7 +72,7 @@ export default function GroupsPage() {
           {list.map((g) => {
             const members = lookup.membersOf(g.id).map((id) => lookup.studentById.get(id)).filter(Boolean);
             return (
-              <Link key={g.id} href={`/grupos/${g.id}`}>
+              <Link key={g.id} href={`/grupos/${g.id}`} {...prefetchOnIntent(router, `/grupos/${g.id}`)}>
                 <Card className="flex h-full flex-col p-4 transition-[border-color,transform] hover:border-border-strong active:scale-[0.99]">
                   <div className="flex items-start gap-3">
                     <span style={cvar(g.color)} className="tint-strong flex size-10 shrink-0 items-center justify-center rounded-xl">

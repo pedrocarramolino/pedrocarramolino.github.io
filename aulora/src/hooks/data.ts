@@ -1,19 +1,10 @@
 'use client';
-import { useMemo } from 'react';
-import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
+import { useEffect, useMemo } from 'react';
+import { keepPreviousData, useMutation, useQuery, useQueryClient, type QueryClient, type UseQueryResult } from '@tanstack/react-query';
 import { toast } from 'sonner';
-import {
-  activityApi,
-  categoryApi,
-  goalApi,
-  groupApi,
-  lessonApi,
-  noteApi,
-  profileApi,
-  studentApi,
-  taskApi,
-} from '@/services/api';
-import type { Category, Group, Student } from '@/lib/types';
+import { allLessons, lessonApi, live, type LiveDef } from '@/services/api';
+import { firebaseAuth } from '@/lib/firebase';
+import type { Category, Group, Lesson, Student } from '@/lib/types';
 
 export const qk = {
   profile: ['profile'] as const,
@@ -38,7 +29,7 @@ export const qk = {
 export const affects = {
   students: ['students', 'members', 'activity', 'tasks-week', 'tasks-weeks', 'pending-assignments'],
   groups: ['groups', 'students', 'activity'],
-  lessons: ['lessons', 'lesson', 'lessons-for', 'activity'],
+  lessons: ['lessons', 'lesson', 'lessons-for', 'all-lessons', 'activity'],
   tasks: ['tasks-week', 'tasks-weeks', 'tasks-student', 'tasks-group', 'pending-assignments', 'activity', 'copies', 'search', 'palette'],
   progress: ['notes', 'goals', 'activity', 'all-goals', 'all-notes'],
   categories: ['categories'],
@@ -49,7 +40,8 @@ export function useInvalidate() {
   const qc = useQueryClient();
   return (...groups: (keyof typeof affects)[]) => {
     const roots = new Set(groups.flatMap((g) => affects[g]));
-    return qc.invalidateQueries({ predicate: (q) => roots.has(String(q.queryKey[0])) });
+    // las consultas en vivo se actualizan solas: no hace falta volver a pedirlas
+    return qc.invalidateQueries({ predicate: (q) => roots.has(String(q.queryKey[0])) && !q.meta?.live });
   };
 }
 
@@ -74,25 +66,154 @@ export function useAction<TArgs, TResult>(
   });
 }
 
-// -------------------------------------------------------------- consultas
-export const useProfile = () => useQuery({ queryKey: qk.profile, queryFn: profileApi.get, staleTime: 5 * 60_000 });
-export const useCategories = () => useQuery({ queryKey: qk.categories, queryFn: categoryApi.list, staleTime: 5 * 60_000 });
-export const useStudents = () => useQuery({ queryKey: qk.students, queryFn: studentApi.list });
-export const useGroups = () => useQuery({ queryKey: qk.groups, queryFn: groupApi.list });
-export const useLessonsRange = (from: string, to: string) =>
-  useQuery({ queryKey: qk.lessons(from, to), queryFn: () => lessonApi.range(from, to), placeholderData: (prev) => prev });
-export const useLesson = (id: string) => useQuery({ queryKey: qk.lesson(id), queryFn: () => lessonApi.get(id) });
-export const useTasksWeek = (week: string) =>
-  useQuery({ queryKey: qk.tasksWeek(week), queryFn: () => taskApi.week(week), placeholderData: (prev) => prev });
-export const useTasksWeeks = (from: string, to: string) => useQuery({ queryKey: qk.tasksWeeks(from, to), queryFn: () => taskApi.weeks(from, to) });
-export const useStudentTasks = (id: string) => useQuery({ queryKey: qk.tasksStudent(id), queryFn: () => taskApi.forStudent(id) });
-export const useGroupTasks = (id: string) => useQuery({ queryKey: qk.tasksGroup(id), queryFn: () => taskApi.forGroup(id) });
-export const useNotes = (id: string) => useQuery({ queryKey: qk.notes(id), queryFn: () => noteApi.forStudent(id) });
-export const useGoals = (id: string) => useQuery({ queryKey: qk.goals(id), queryFn: () => goalApi.forStudent(id) });
-export const useActivity = () => useQuery({ queryKey: qk.activity, queryFn: () => activityApi.recent(12) });
-export const usePendingAssignments = () => useQuery({ queryKey: qk.pending, queryFn: taskApi.pendingAssignments });
-export const useAllGoals = () => useQuery({ queryKey: ['all-goals'], queryFn: goalApi.all });
-export const useAllNotes = () => useQuery({ queryKey: ['all-notes'], queryFn: noteApi.recent });
+// -------------------------------------------------------------- consultas en vivo
+/**
+ * Un solo oyente de Firestore por consulta, compartido entre componentes.
+ * Se mantiene unos segundos tras desmontar para no reabrirlo al navegar.
+ */
+const listeners = new Map<string, { count: number; unsub: () => void; timer?: ReturnType<typeof setTimeout> }>();
+
+function attach<T>(qc: QueryClient, key: readonly unknown[], def: () => LiveDef<T>) {
+  const hash = JSON.stringify(key);
+  let entry = listeners.get(hash);
+  if (entry?.timer) clearTimeout(entry.timer);
+  if (!entry) {
+    let unsub = () => {};
+    try {
+      unsub = def().subscribe(
+        (data, meta) => {
+          if (!meta.fromCache) markWarm();
+          // una caché vacía solo se muestra si el dispositivo ya estaba sincronizado
+          if (meta.fromCache && meta.empty && !cacheIsWarm()) return;
+          qc.setQueryData(key, data);
+        },
+        () => {},
+      );
+    } catch {
+      // sin sesión todavía
+    }
+    entry = { count: 0, unsub };
+    listeners.set(hash, entry);
+  }
+  entry.count++;
+  return () => {
+    const e = listeners.get(hash);
+    if (!e) return;
+    e.count--;
+    if (e.count <= 0) {
+      e.timer = setTimeout(() => {
+        if (e.count <= 0) {
+          e.unsub();
+          listeners.delete(hash);
+        }
+      }, 30_000);
+    }
+  };
+}
+
+/**
+ * ¿Este dispositivo ya ha sincronizado antes con la cuenta actual? Entonces su
+ * caché está completa y una lista vacía en caché es fiable (se muestra al
+ * instante; si no lo fuera, el oyente en vivo la corrige al llegar el servidor).
+ * Se guarda solo una marca (no datos) en localStorage.
+ */
+const WARM_KEY = 'aulora-cache-warm';
+function cacheIsWarm() {
+  try {
+    const uid = firebaseAuth().currentUser?.uid;
+    return !!uid && localStorage.getItem(WARM_KEY) === uid;
+  } catch {
+    return false;
+  }
+}
+function markWarm() {
+  try {
+    const uid = firebaseAuth().currentUser?.uid;
+    if (uid && localStorage.getItem(WARM_KEY) !== uid) localStorage.setItem(WARM_KEY, uid);
+  } catch {
+    // sin almacenamiento
+  }
+}
+
+/** Primera respuesta de una consulta en vivo (caché si tiene datos; si no, servidor). */
+function firstValue<T>(def: () => LiveDef<T>, emptyValue: T): Promise<T> {
+  return new Promise<T>((resolve, reject) => {
+    let done = false;
+    let cached: T | undefined;
+    let unsub: () => void = () => {};
+    const finish = (fn: () => void) => {
+      if (done) return;
+      done = true;
+      clearTimeout(timer);
+      fn();
+      queueMicrotask(() => unsub());
+    };
+    // sin conexión: no dejar la pantalla cargando indefinidamente
+    const timer = setTimeout(() => finish(() => resolve(cached ?? emptyValue)), 6000);
+    try {
+      unsub = def().subscribe(
+        (data, meta) => {
+          if (!meta.fromCache) markWarm();
+          if (meta.fromCache && meta.empty && !cacheIsWarm()) {
+            cached = data;
+            return;
+          }
+          finish(() => resolve(data));
+        },
+        (e) => finish(() => reject(e)),
+      );
+    } catch (e) {
+      finish(() => reject(e));
+    }
+  });
+}
+
+function useLive<T>(
+  key: readonly unknown[],
+  def: () => LiveDef<T>,
+  emptyValue: NoInfer<T>,
+  opts: { enabled?: boolean; keepPrevious?: boolean } = {},
+): UseQueryResult<T, Error> {
+  const qc = useQueryClient();
+  const enabled = opts.enabled ?? true;
+  const hash = JSON.stringify(key);
+  useEffect(() => {
+    if (!enabled) return;
+    return attach(qc, key, def);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [hash, enabled, qc]);
+  return useQuery<T, Error, T>({
+    queryKey: key,
+    queryFn: () => firstValue(def, emptyValue),
+    enabled,
+    staleTime: Infinity,
+    meta: { live: true },
+    // al cambiar de semana o de rango se mantiene lo anterior mientras llega lo nuevo
+    placeholderData: opts.keepPrevious ? keepPreviousData : undefined,
+  });
+}
+
+const EMPTY: never[] = [];
+
+export const useProfile = () => useLive(qk.profile, live.profile, null);
+export const useCategories = () => useLive(qk.categories, live.categories, EMPTY);
+export const useStudents = () => useLive(qk.students, live.students, EMPTY);
+export const useGroups = () => useLive(qk.groups, live.groups, EMPTY);
+export const useLessonsRange = (from: string, to: string) => useLive(qk.lessons(from, to), () => live.lessonsRange(from, to), EMPTY, { keepPrevious: true });
+export const useLesson = (id: string) => useLive<Lesson>(qk.lesson(id), () => live.lesson(id), null as unknown as Lesson);
+export const useTasksWeek = (week: string) => useLive(qk.tasksWeek(week), () => live.tasksWeek(week), EMPTY, { keepPrevious: true });
+export const useTasksWeeks = (from: string, to: string) => useLive(qk.tasksWeeks(from, to), () => live.tasksWeeks(from, to), EMPTY);
+export const useStudentTasks = (id: string) => useLive(qk.tasksStudent(id), () => live.tasksStudent(id), EMPTY);
+export const useGroupTasks = (id: string) => useLive(qk.tasksGroup(id), () => live.tasksGroup(id), EMPTY);
+export const useNotes = (id: string) => useLive(qk.notes(id), () => live.notes(id), EMPTY);
+export const useGoals = (id: string) => useLive(qk.goals(id), () => live.goals(id), EMPTY);
+export const useActivity = () => useLive(qk.activity, () => live.activity(12), EMPTY);
+export const usePendingAssignments = () => useLive(qk.pending, live.pending, EMPTY);
+export const useAllGoals = () => useLive(['all-goals'], live.allGoals, EMPTY);
+export const useAllNotes = () => useLive(['all-notes'], live.allNotes, EMPTY);
+export const useAllTasks = (enabled = true) => useLive(['all-tasks'], live.allTasks, EMPTY, { enabled });
+/** Todas las clases (búsqueda): una lectura y se reutiliza unos minutos. */
+export const useAllLessons = (enabled = true) => useQuery({ queryKey: ['all-lessons'], queryFn: allLessons, enabled, staleTime: 5 * 60_000 });
 export const useLessonsFor = (studentId: string | null, groupIds: string[]) =>
   useQuery({ queryKey: qk.lessonsFor(studentId, groupIds), queryFn: () => lessonApi.forTarget(studentId, groupIds) });
 
