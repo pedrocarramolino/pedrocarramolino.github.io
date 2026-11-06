@@ -1,0 +1,241 @@
+@import 'tailwindcss';
+
+@custom-variant dark (&:where(.dark, .dark *));
+
+/* ---------------------------------------------------------------------------
+   Identidad de Aula
+   Neutros cálidos «papel y tinta» con un acento azul tinta.
+   --------------------------------------------------------------------------- */
+:root {
+  --bg: #f7f7f5;
+  --surface: #ffffff;
+  --surface-2: #f2f2ef;
+  --surface-3: #e9e9e5;
+  --border: #e4e4df;
+  --border-strong: #d3d3cc;
+  --fg: #1c1c1e;
+  --fg-2: #46464b;
+  --muted: #7b7b82;
+  --accent: #4655d8;
+  --accent-hover: #3a48c4;
+  --accent-soft: #eceefe;
+  --accent-fg: #ffffff;
+  --danger: #d0453b;
+  --danger-soft: #fdeceb;
+  --success: #2f8a5b;
+  --success-soft: #e6f4ec;
+  --warning: #b9770e;
+  --warning-soft: #fbf1df;
+  --shadow-sm: 0 1px 2px rgb(20 20 30 / 0.05);
+  --shadow: 0 1px 2px rgb(20 20 30 / 0.04), 0 4px 16px rgb(20 20 30 / 0.06);
+  --shadow-lg: 0 2px 6px rgb(20 20 30 / 0.06), 0 16px 48px rgb(20 20 30 / 0.14);
+  --ring: color-mix(in oklab, var(--accent) 45%, transparent);
+  color-scheme: light;
+}
+
+.dark {
+  --bg: #121214;
+  --surface: #19191c;
+  --surface-2: #202024;
+  --surface-3: #2a2a2f;
+  --border: #2b2b30;
+  --border-strong: #3a3a41;
+  --fg: #ededef;
+  --fg-2: #c2c2c8;
+  --muted: #8b8b94;
+  --accent: #7c88f2;
+  --accent-hover: #919cf6;
+  --accent-soft: #23264a;
+  --accent-fg: #0d0d1a;
+  --danger: #ef6b61;
+  --danger-soft: #3a1f1d;
+  --success: #5cc48d;
+  --success-soft: #17301f;
+  --warning: #e2a648;
+  --warning-soft: #372a14;
+  --shadow-sm: 0 1px 2px rgb(0 0 0 / 0.3);
+  --shadow: 0 1px 2px rgb(0 0 0 / 0.3), 0 4px 16px rgb(0 0 0 / 0.25);
+  --shadow-lg: 0 2px 6px rgb(0 0 0 / 0.35), 0 16px 48px rgb(0 0 0 / 0.5);
+  color-scheme: dark;
+}
+
+@theme inline {
+  --color-bg: var(--bg);
+  --color-surface: var(--surface);
+  --color-surface-2: var(--surface-2);
+  --color-surface-3: var(--surface-3);
+  --color-border: var(--border);
+  --color-border-strong: var(--border-strong);
+  --color-fg: var(--fg);
+  --color-fg-2: var(--fg-2);
+  --color-muted: var(--muted);
+  --color-accent: var(--accent);
+  --color-accent-hover: var(--accent-hover);
+  --color-accent-soft: var(--accent-soft);
+  --color-accent-fg: var(--accent-fg);
+  --color-danger: var(--danger);
+  --color-danger-soft: var(--danger-soft);
+  --color-success: var(--success);
+  --color-success-soft: var(--success-soft);
+  --color-warning: var(--warning);
+  --color-warning-soft: var(--warning-soft);
+  --font-sans: var(--font-geist-sans), ui-sans-serif, system-ui, -apple-system, 'Segoe UI', sans-serif;
+  --font-mono: var(--font-geist-mono), ui-monospace, monospace;
+  --shadow-sm: var(--shadow-sm);
+  --shadow: var(--shadow);
+  --shadow-lg: var(--shadow-lg);
+  --radius-lg: 0.625rem;
+  --radius-xl: 0.875rem;
+  --ease-out-soft: cubic-bezier(0.22, 1, 0.36, 1);
+}
+
+@layer base {
+  html {
+    -webkit-text-size-adjust: 100%;
+    text-rendering: optimizeLegibility;
+  }
+  body {
+    background: var(--bg);
+    color: var(--fg);
+    font-feature-settings: 'cv11', 'ss01';
+    -webkit-font-smoothing: antialiased;
+    -webkit-tap-highlight-color: transparent;
+    overscroll-behavior-y: none;
+  }
+  ::selection {
+    background: color-mix(in oklab, var(--accent) 25%, transparent);
+  }
+  :focus-visible {
+    outline: 2px solid var(--ring);
+    outline-offset: 2px;
+  }
+  button,
+  [role='button'] {
+    cursor: pointer;
+    -webkit-user-select: none;
+    user-select: none;
+  }
+  button:disabled {
+    cursor: default;
+  }
+  input,
+  textarea,
+  select {
+    /* 16px evita el zoom automático de iOS al enfocar */
+    font-size: max(16px, 1em);
+  }
+  @media (min-width: 768px) {
+    input,
+    textarea,
+    select {
+      font-size: 0.875rem;
+    }
+  }
+  input[type='date'],
+  input[type='time'] {
+    min-height: 2.25rem;
+  }
+}
+
+/* Color identificativo: cualquier elemento con style="--c: #hex" */
+.tint {
+  background-color: color-mix(in oklab, var(--c) 13%, var(--surface));
+  color: color-mix(in oklab, var(--c) 72%, var(--fg));
+  border-color: color-mix(in oklab, var(--c) 32%, transparent);
+}
+.tint-strong {
+  background-color: color-mix(in oklab, var(--c) 22%, var(--surface));
+  color: color-mix(in oklab, var(--c) 78%, var(--fg));
+}
+.dot {
+  background-color: var(--c);
+}
+
+@media (hover: hover) {
+  .hover-surface:hover {
+    background-color: var(--surface-2);
+  }
+}
+
+.scrollbar-none {
+  scrollbar-width: none;
+}
+.scrollbar-none::-webkit-scrollbar {
+  display: none;
+}
+
+.pb-safe {
+  padding-bottom: env(safe-area-inset-bottom);
+}
+.pt-safe {
+  padding-top: env(safe-area-inset-top);
+}
+
+@keyframes fade-in {
+  from {
+    opacity: 0;
+  }
+}
+@keyframes pop-in {
+  from {
+    opacity: 0;
+    transform: translateY(6px) scale(0.98);
+  }
+}
+@keyframes sheet-in {
+  from {
+    transform: translateY(100%);
+  }
+}
+@keyframes slide-in-right {
+  from {
+    transform: translateX(24px);
+    opacity: 0;
+  }
+}
+@keyframes rise {
+  from {
+    opacity: 0;
+    transform: translateY(4px);
+  }
+}
+.animate-fade-in {
+  animation: fade-in 160ms ease-out both;
+}
+.animate-pop-in {
+  animation: pop-in 220ms var(--ease-out-soft) both;
+}
+.animate-sheet-in {
+  animation: sheet-in 300ms var(--ease-out-soft) both;
+}
+.animate-slide-in-right {
+  animation: slide-in-right 240ms var(--ease-out-soft) both;
+}
+.animate-rise {
+  animation: rise 260ms var(--ease-out-soft) both;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 1ms !important;
+    transition-duration: 1ms !important;
+  }
+}
+
+/* Rejilla de la agenda */
+.agenda-hours {
+  background-image: linear-gradient(to bottom, var(--border) 1px, transparent 1px);
+  background-size: 100% var(--hour-h);
+}
+.skeleton {
+  background: linear-gradient(90deg, var(--surface-2), var(--surface-3), var(--surface-2));
+  background-size: 200% 100%;
+  animation: shimmer 1.4s linear infinite;
+}
+@keyframes shimmer {
+  to {
+    background-position: -200% 0;
+  }
+}
