@@ -18,6 +18,8 @@ export async function run({ browser, base, shots, admin }) {
   let me;
   /** Documentos del profesor principal en Firestore (lectura de administración). */
   const docs = async (name) => {
+    // lo guardado en el dispositivo se envía en segundo plano: esperar a que llegue
+    await page.evaluate(() => window.__auloraFlush?.()).catch(() => {});
     me ??= await admin.uid('pedro@test.es');
     return admin.docs(me, name);
   };
@@ -217,6 +219,24 @@ export async function run({ browser, base, shots, admin }) {
     await dlg.getByText(/con Hugo García/).waitFor();
     await dlg.getByRole('button', { name: 'Guardar de todos modos' }).click();
     await toast('Clase programada');
+  });
+
+  await step('serie con conflicto: aviso tras guardar y deshacer', async () => {
+    await page.getByRole('button', { name: 'Nueva clase' }).click();
+    const dlg = page.getByRole('dialog');
+    await dlg.getByLabel('Alumno').selectOption({ label: 'Lucía Martín · Piano' });
+    await dlg.getByLabel('Fecha').fill(key(nextMonday));
+    await dlg.getByLabel('Hora').fill('17:00');
+    await dlg.getByText('Repetir cada semana').click();
+    await dlg.getByLabel('Hasta el').fill(key(addDays(nextMonday, 1)));
+    await dlg.getByRole('button', { name: 'Crear 1 clase', exact: true }).click();
+    await toast('Serie creada: 1 clase');
+    await toast('1 sesión coincide con otra clase');
+    const lucia = (await docs('students')).find((x) => x.first_name === 'Lucía');
+    expect((await docs('lessons')).some((l) => l.student_id === lucia.id), 'la serie debería haberse guardado');
+    await page.locator('[data-sonner-toast]').filter({ hasText: 'coincide' }).getByRole('button', { name: 'Deshacer serie' }).click();
+    await toast('Serie deshecha');
+    expect(!(await docs('lessons')).some((l) => l.student_id === lucia.id), 'la serie debería haberse deshecho');
   });
 
   await step('arrastrar una clase a otra hora', async () => {

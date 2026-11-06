@@ -1,5 +1,5 @@
 'use client';
-import { useRef, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import { useQueryClient } from '@tanstack/react-query';
 import { Camera, Trash2 } from 'lucide-react';
@@ -47,6 +47,12 @@ export function StudentForm({ student, onClose }: { student?: Student; onClose: 
   const { groups, groupsOf } = useLookup();
   const profile = useProfile();
   const editing = !!student;
+  // id del elemento nuevo generado al abrir: su ficha se precarga mientras se rellena el formulario
+  const [presetId] = useState(() => (editing ? null : studentApi.newId()));
+  useEffect(() => {
+    if (presetId) // precarga completa (datos y código) de la ficha, no solo hasta la pantalla de carga
+    router.prefetch(`/alumnos/${presetId}`, { kind: 'full' as never });
+  }, [presetId, router]);
   const initialGroups = student ? groupsOf(student.id) : [];
   const [form, setForm] = useState<Omit<StudentInput, 'group_ids'>>(() => ({
     first_name: student?.first_name ?? '',
@@ -72,7 +78,7 @@ export function StudentForm({ student, onClose }: { student?: Student; onClose: 
   const save = useAction(
     async () => {
       const clean = { ...form, first_name: form.first_name.trim(), last_name: form.last_name.trim(), email: form.email.trim(), joined_on: form.joined_on || null, lesson_minutes: minutes ?? 60, group_ids: groupIds };
-      return editing ? await studentApi.update(student.id, clean) : await studentApi.create(clean);
+      return editing ? await studentApi.update(student.id, clean) : await studentApi.create(clean, presetId ?? undefined);
     },
     {
       success: editing ? 'Alumno actualizado' : 'Alumno creado',

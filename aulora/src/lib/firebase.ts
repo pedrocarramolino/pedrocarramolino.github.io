@@ -7,6 +7,7 @@ import {
   persistentLocalCache,
   persistentMultipleTabManager,
   memoryLocalCache,
+  waitForPendingWrites,
   type Firestore,
 } from 'firebase/firestore';
 
@@ -53,16 +54,24 @@ export function firebaseAuth(): Auth {
  * Firestore con caché local persistente (IndexedDB): la app abre al instante
  * y sigue mostrando datos con mala cobertura. La fuente de verdad es el servidor.
  */
+/** Espera (con límite) a que el servidor reciba los cambios guardados en el dispositivo. */
+export async function flushWrites(timeoutMs = 4000) {
+  if (!db) return;
+  await Promise.race([waitForPendingWrites(db), new Promise((r) => setTimeout(r, timeoutMs))]).catch(() => {});
+}
+
 export function firestore(): Firestore {
   if (!db) {
     db = initializeFirestore(firebaseApp(), {
       ignoreUndefinedProperties: true,
       localCache:
-        typeof window !== 'undefined' && !useEmulators
-          ? persistentLocalCache({ tabManager: persistentMultipleTabManager() })
-          : memoryLocalCache(),
+        typeof window !== 'undefined' ? persistentLocalCache({ tabManager: persistentMultipleTabManager() }) : memoryLocalCache(),
     });
-    if (useEmulators) connectFirestoreEmulator(db, '127.0.0.1', 8080);
+    if (useEmulators) {
+      connectFirestoreEmulator(db, '127.0.0.1', 8080);
+      // solo en pruebas: permite esperar a que lo guardado llegue al servidor
+      (window as unknown as { __auloraFlush?: () => Promise<void> }).__auloraFlush = () => flushWrites(10_000);
+    }
   }
   return db;
 }

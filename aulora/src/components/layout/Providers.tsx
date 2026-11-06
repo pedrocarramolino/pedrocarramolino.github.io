@@ -2,7 +2,8 @@
 import { useEffect, useState } from 'react';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { Toaster, toast } from 'sonner';
-import { syncErrors } from '@/services/api';
+import { localChanges, syncErrors, type LocalChange } from '@/services/api';
+import { applyLocalChanges } from '@/hooks/local-changes';
 import { ConfirmProvider } from '@/components/ui/overlay';
 import { UiProvider } from './ui-store';
 import { useTheme } from './theme';
@@ -25,8 +26,14 @@ export function Providers({ children }: { children: React.ReactNode }) {
       toast.error(`No se pudo guardar en el servidor: ${(e as CustomEvent<Error>).detail.message}`);
       void client.invalidateQueries();
     };
+    // cambios guardados en el dispositivo: se muestran al instante en todas las pantallas
+    const onChange = (e: Event) => applyLocalChanges(client, (e as CustomEvent<LocalChange[]>).detail);
     syncErrors.addEventListener('error', on);
-    return () => syncErrors.removeEventListener('error', on);
+    localChanges.addEventListener('change', onChange);
+    return () => {
+      syncErrors.removeEventListener('error', on);
+      localChanges.removeEventListener('change', onChange);
+    };
   }, [client]);
   return (
     <QueryClientProvider client={client}>

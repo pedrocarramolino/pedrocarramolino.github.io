@@ -25,6 +25,7 @@ import {
   doc,
   getDoc,
   getDocFromCache,
+  getDocsFromCache,
   getDocs,
   limit as qLimit,
   orderBy,
@@ -90,7 +91,7 @@ function uid(): string {
   return u.uid;
 }
 const db = () => firestore();
-type Coll = 'categories' | 'students' | 'groups' | 'series' | 'lessons' | 'tasks' | 'notes' | 'goals' | 'activity';
+export type Coll = 'categories' | 'students' | 'groups' | 'series' | 'lessons' | 'tasks' | 'notes' | 'goals' | 'activity';
 const col = (c: Coll) => collection(db(), 'users', uid(), c);
 const ref = (c: Coll, id: string) => doc(db(), 'users', uid(), c, id);
 const newId = (c: Coll) => doc(col(c)).id;
@@ -125,21 +126,33 @@ class Batcher {
     this.count++;
     return this.batches[this.batches.length - 1];
   }
+  private changes: LocalChange[] = [];
+  private touch(r: ReturnType<typeof doc>, value: DocumentData | null | 'refresh') {
+    const coll = r.parent.id as Coll;
+    this.changes.push({ coll, id: r.id, value });
+  }
   set(r: ReturnType<typeof doc>, data: DocumentData, merge = false) {
     if (merge) this.current.set(r, data, { merge: true });
     else this.current.set(r, data);
+    this.touch(r, merge ? 'refresh' : data);
   }
   update(r: ReturnType<typeof doc>, data: DocumentData) {
     this.current.update(r, data);
+    this.touch(r, 'refresh');
   }
   delete(r: ReturnType<typeof doc>) {
     this.current.delete(r);
+    this.touch(r, null);
   }
   log(entity: string, action: ActivityEntry['action'], label: string, entityId: string | null) {
     this.current.set(doc(col('activity')), { entity, entity_id: entityId, action, label: label.slice(0, 200), created_at: now() });
   }
   async commit() {
     for (const b of this.batches) await b.commit();
+  }
+  /** Guarda esperando la confirmación del servidor (solo donde hace falta). */
+  async commitAndWait() {
+    await this.commit();
   }
   /**
    * Guarda sin esperar la confirmación del servidor. Firestore aplica el cambio
@@ -148,11 +161,40 @@ class Batcher {
    */
   commitInBackground() {
     this.commit().catch((e) => syncErrors.dispatchEvent(new CustomEvent('error', { detail: humanize(e) })));
+    // la interfaz se actualiza ya, sin esperar al servidor
+    const changes = this.changes.filter((c) => c.coll !== 'activity');
+    if (changes.length) localChanges.dispatchEvent(new CustomEvent('change', { detail: changes }));
   }
 }
 
 /** Errores de escrituras sincronizadas en segundo plano (los muestra la interfaz). */
 export const syncErrors = new EventTarget();
+
+/**
+ * Cambios locales recién guardados (antes de que confirme el servidor), para
+ * que las listas en pantalla se actualicen al instante.
+ * value: documento completo, null si se borró, o 'refresh' si hay que recargar.
+ */
+export type LocalChange = { coll: Coll; id: string; value: DocumentData | null | 'refresh' };
+export const localChanges = new EventTarget();
+
+/** Convierte un documento guardado al tipo que usa la interfaz. */
+export function toAppDoc(coll: Coll, id: string, data: DocumentData): unknown {
+  if (coll === 'tasks') return toTask(id, data);
+  if (coll === 'students') return { ...withId<Student>(id, data), group_ids: (data.group_ids as string[]) ?? [] };
+  return withId(id, data);
+}
+
+/** Lee un documento de la caché local si está; si no, del servidor. */
+async function readDoc(r: ReturnType<typeof doc>) {
+  try {
+    const snap = await getDocFromCache(r);
+    if (snap.exists()) return snap;
+  } catch {
+    // no está en caché
+  }
+  return getDoc(r);
+}
 
 const fullName = (s: Pick<Student, 'first_name' | 'last_name'>) => [s.first_name, s.last_name].filter(Boolean).join(' ');
 
@@ -170,7 +212,7 @@ const DEFAULT_CATEGORIES: [string, string][] = [
 export const profileApi = {
   get: () =>
     safe(async () => {
-      const snap = await getDoc(doc(db(), 'users', uid()));
+      const snap = await readDoc(doc(db(), 'users', uid()));
       return snap.exists() ? ({ ...(snap.data() as Profile), id: snap.id } as Profile) : null;
     }),
   /** Crea el perfil y las categorías iniciales la primera vez que entra el profesor. */
@@ -187,18 +229,18 @@ export const profileApi = {
       if (created) {
         const b = new Batcher();
         DEFAULT_CATEGORIES.forEach(([name, color], i) => b.set(doc(col('categories')), { name, color, sort_order: i + 1, created_at: now() }));
-        await b.commit();
+        await b.commitAndWait();
       }
       return created;
     }),
   update: (id: string, patch: Partial<Profile>) =>
     safe(async () => {
       const r = doc(db(), 'users', id);
-      const cur = (await getDoc(r)).data() ?? {};
+      const cur = (await readDoc(r)).data() ?? {};
       const next = { ...cur, ...clean(patch) };
-      const b = writeBatch(db());
+      const b = new Batcher();
       b.set(r, next);
-      await b.commit();
+      b.commitInBackground();
       return { ...(next as Profile), id };
     }),
 };
@@ -211,21 +253,21 @@ export const categoryApi = {
       const existing = await all<Category>('categories');
       if (existing.some((x) => norm(x.name) === norm(c.name))) throw new ApiError('Ya existe una categoría con ese nombre.');
       const id = newId('categories');
-      const b = writeBatch(db());
+      const b = new Batcher();
       const data = { ...c, created_at: now() };
       b.set(ref('categories', id), data);
-      await b.commit();
+      b.commitInBackground();
       return withId<Category>(id, data);
     }),
   update: (id: string, patch: Partial<Category>) =>
     safe(async () => {
       const r = ref('categories', id);
-      const cur = (await getDoc(r)).data();
+      const cur = (await readDoc(r)).data();
       if (!cur) throw new ApiError('La categoría ya no existe.');
       const next = { ...cur, ...clean(patch) };
-      const b = writeBatch(db());
+      const b = new Batcher();
       b.set(r, next);
-      await b.commit();
+      b.commitInBackground();
       return withId<Category>(id, next);
     }),
   /** Borra la categoría; las tareas, objetivos y notas que la usaban quedan sin categoría. */
@@ -237,7 +279,7 @@ export const categoryApi = {
         snap.docs.forEach((d) => b.update(d.ref, { category_id: null }));
       }
       b.delete(ref('categories', id));
-      await b.commit();
+      b.commitInBackground();
     }),
 };
 
@@ -268,9 +310,11 @@ export const studentApi = {
       if (!snap.exists()) throw new ApiError('Alumno no encontrado', 'not-found');
       return withId<Student>(id, snap.data());
     }),
-  create: (s: Partial<StudentInput>) =>
+  /** Id para un alumno nuevo (permite precargar su ficha antes de guardarlo). */
+  newId: () => newId('students'),
+  create: (s: Partial<StudentInput>, presetId?: string) =>
     safe(async () => {
-      const id = newId('students');
+      const id = presetId ?? newId('students');
       const data = { ...STUDENT_DEFAULTS, ...s, created_at: now(), updated_at: now() };
       const b = new Batcher();
       b.set(ref('students', id), data);
@@ -282,7 +326,7 @@ export const studentApi = {
     safe(async () => {
       const r = ref('students', id);
       // la caché local basta para conocer el estado actual: evita esperar al servidor
-      const snap = await getDocFromCache(r).catch(() => getDoc(r));
+      const snap = await readDoc(r);
       const cur = snap.data();
       if (!cur) throw new ApiError('El alumno ya no existe.', 'not-found');
       const next = { ...STUDENT_DEFAULTS, ...cur, ...clean(patch), updated_at: now() };
@@ -295,7 +339,7 @@ export const studentApi = {
   /** Borra al alumno y, en cascada, sus clases, series, notas, objetivos y asignaciones. */
   remove: (id: string) =>
     safe(async () => {
-      const cur = (await getDoc(ref('students', id))).data();
+      const cur = (await readDoc(ref('students', id))).data();
       const b = new Batcher();
       for (const c of ['lessons', 'series', 'notes', 'goals'] as const) {
         (await getDocs(query(col(c), where('student_id', '==', id)))).docs.forEach((d) => b.delete(d.ref));
@@ -312,11 +356,11 @@ export const studentApi = {
       }
       b.delete(ref('students', id));
       b.log('students', 'deleted', cur ? fullName(cur as Student) : '', id);
-      await b.commit();
+      b.commitInBackground();
     }),
   duplicate: (id: string) =>
     safe(async () => {
-      const cur = (await getDoc(ref('students', id))).data() as Student | undefined;
+      const cur = (await readDoc(ref('students', id))).data() as Student | undefined;
       if (!cur) throw new ApiError('Alumno no encontrado', 'not-found');
       const copy = await studentApi.create({
         ...clean(cur),
@@ -335,32 +379,33 @@ const GROUP_DEFAULTS = { description: '', subject: '', usual_weekday: null, usua
 
 export const groupApi = {
   list: () => safe(async () => (await all<Group>('groups')).sort((a, b) => a.name.localeCompare(b.name, 'es'))),
-  create: (g: Partial<GroupInput>) =>
+  newId: () => newId('groups'),
+  create: (g: Partial<GroupInput>, presetId?: string) =>
     safe(async () => {
-      const id = newId('groups');
+      const id = presetId ?? newId('groups');
       const data = { ...GROUP_DEFAULTS, ...g, created_at: now(), updated_at: now() };
       const b = new Batcher();
       b.set(ref('groups', id), data);
       b.log('groups', 'created', String(data.name), id);
-      await b.commit();
+      b.commitInBackground();
       return withId<Group>(id, data);
     }),
   update: (id: string, patch: Partial<GroupInput>) =>
     safe(async () => {
       const r = ref('groups', id);
-      const cur = (await getDoc(r)).data();
+      const cur = (await readDoc(r)).data();
       if (!cur) throw new ApiError('El grupo ya no existe.', 'not-found');
       const next: DocumentData = { ...GROUP_DEFAULTS, ...cur, ...clean(patch), updated_at: now() };
       const b = new Batcher();
       b.set(r, next);
       b.log('groups', 'updated', String(next.name), id);
-      await b.commit();
+      b.commitInBackground();
       return withId<Group>(id, next);
     }),
   /** Borra el grupo, sus clases y sus tareas; los alumnos se conservan. */
   remove: (id: string) =>
     safe(async () => {
-      const cur = (await getDoc(ref('groups', id))).data();
+      const cur = (await readDoc(ref('groups', id))).data();
       const b = new Batcher();
       for (const c of ['lessons', 'series', 'tasks'] as const) {
         (await getDocs(query(col(c), where('group_id', '==', id)))).docs.forEach((d) => b.delete(d.ref));
@@ -368,7 +413,7 @@ export const groupApi = {
       (await getDocs(query(col('students'), where('group_ids', 'array-contains', id)))).docs.forEach((d) => b.update(d.ref, { group_ids: arrayRemove(id) }));
       b.delete(ref('groups', id));
       b.log('groups', 'deleted', String(cur?.name ?? ''), id);
-      await b.commit();
+      b.commitInBackground();
     }),
   /** Pertenencias derivadas de los alumnos. */
   members: () =>
@@ -378,13 +423,13 @@ export const groupApi = {
       const b = new Batcher();
       studentIds.filter((id) => !current.includes(id)).forEach((id) => b.update(ref('students', id), { group_ids: arrayUnion(groupId) }));
       current.filter((id) => !studentIds.includes(id)).forEach((id) => b.update(ref('students', id), { group_ids: arrayRemove(groupId) }));
-      await b.commit();
+      b.commitInBackground();
     }),
   setStudentGroups: (studentId: string, groupIds: string[]) =>
     safe(async () => {
       const b = new Batcher();
       b.update(ref('students', studentId), { group_ids: [...new Set(groupIds)] });
-      await b.commit();
+      b.commitInBackground();
     }),
 };
 
@@ -442,7 +487,7 @@ export const lessonApi = {
       const b = new Batcher();
       b.set(ref('lessons', id), data);
       b.log('lessons', 'created', lessonLabel(data), id);
-      await b.commit();
+      b.commitInBackground();
       return withId<Lesson>(id, data);
     }),
   /** Crea muchas sesiones a la vez (series): solo se registra la serie en la actividad. */
@@ -456,29 +501,29 @@ export const lessonApi = {
         b.set(ref('lessons', id), data);
         out.push(withId<Lesson>(id, data));
       }
-      await b.commit();
+      b.commitInBackground();
       return out;
     }),
   update: (id: string, patch: LessonInput) =>
     safe(async () => {
       const r = ref('lessons', id);
-      const cur = (await getDoc(r)).data();
+      const cur = (await readDoc(r)).data();
       if (!cur) throw new ApiError('La clase ya no existe.', 'not-found');
       const next = lessonData({ ...cur, ...clean(patch), updated_at: now() });
       const b = new Batcher();
       b.set(r, next);
       const label = lessonLabel(next) + (cur.status !== next.status ? ` · ${STATUS_WORD[next.status]}` : '');
       b.log('lessons', 'updated', label, id);
-      await b.commit();
+      b.commitInBackground();
       return withId<Lesson>(id, next);
     }),
   remove: (id: string) =>
     safe(async () => {
-      const cur = (await getDoc(ref('lessons', id))).data();
+      const cur = (await readDoc(ref('lessons', id))).data();
       const b = new Batcher();
       b.delete(ref('lessons', id));
       b.log('lessons', 'deleted', cur ? lessonLabel(cur) : '', id);
-      await b.commit();
+      b.commitInBackground();
     }),
   /** Clases que se solapan con un intervalo (no canceladas). */
   conflicts: (startsIso: string, endsIso: string, exclude: string[] = []) =>
@@ -494,11 +539,31 @@ export const lessonApi = {
         .filter((l) => l.starts_at >= new Date(fromIso).toISOString() && l.status === 'scheduled')
         .sort((a, b) => a.starts_at.localeCompare(b.starts_at)),
     ),
+  /**
+   * Crea una serie recurrente y todas sus sesiones en una sola escritura
+   * (sin esperar al servidor). Devuelve la serie y las sesiones creadas.
+   */
+  createSeries: (series: Omit<LessonSeries, 'id' | 'owner_id'>, rows: LessonInput[]) =>
+    safe(async () => {
+      const seriesId = newId('series');
+      const b = new Batcher();
+      b.set(ref('series', seriesId), { ...series, created_at: now(), updated_at: now() });
+      b.log('lesson_series', 'created', `${series.weekdays.length} día(s) por semana · ${series.start_time} · ${rows.length} clases`, seriesId);
+      const lessons: Lesson[] = [];
+      for (const r of rows) {
+        const id = newId('lessons');
+        const data = lessonData({ ...r, series_id: seriesId, created_at: now(), updated_at: now() });
+        b.set(ref('lessons', id), data);
+        lessons.push(withId<Lesson>(id, data));
+      }
+      b.commitInBackground();
+      return { seriesId, lessons };
+    }),
   removeMany: (ids: string[]) =>
     safe(async () => {
       const b = new Batcher();
       ids.forEach((id) => b.delete(ref('lessons', id)));
-      await b.commit();
+      b.commitInBackground();
     }),
 };
 
@@ -510,7 +575,7 @@ export const seriesApi = {
       const b = new Batcher();
       b.set(ref('series', id), data);
       b.log('lesson_series', 'created', `${s.weekdays.length} día(s) por semana · ${s.start_time}`, id);
-      await b.commit();
+      b.commitInBackground();
       return withId<LessonSeries>(id, data);
     }),
   get: (id: string) =>
@@ -522,16 +587,21 @@ export const seriesApi = {
   update: (id: string, patch: Partial<LessonSeries>) =>
     safe(async () => {
       const r = ref('series', id);
-      const cur = (await getDoc(r)).data();
+      const cur = (await readDoc(r)).data();
       if (!cur) throw new ApiError('Serie no encontrada', 'not-found');
       const next: DocumentData = { ...cur, ...clean(patch), updated_at: now() };
       if (next.end_date < next.start_date) next.end_date = next.start_date;
-      const b = writeBatch(db());
+      const b = new Batcher();
       b.set(r, next);
-      await b.commit();
+      b.commitInBackground();
       return withId<LessonSeries>(id, next);
     }),
-  remove: (id: string) => safe(() => deleteDoc(ref('series', id))),
+  remove: (id: string) =>
+    safe(async () => {
+      const b = new Batcher();
+      b.delete(ref('series', id));
+      b.commitInBackground();
+    }),
 };
 
 // ------------------------------------------------------------------ Tareas
@@ -604,7 +674,9 @@ const byWeekThenCreated = (a: Task, b: Task) => a.week_start.localeCompare(b.wee
 
 /** Alumnos actuales (no archivados) de un grupo. */
 async function groupMemberIds(groupId: string) {
-  const snap = await getDocs(query(col('students'), where('group_ids', 'array-contains', groupId)));
+  const q = query(col('students'), where('group_ids', 'array-contains', groupId));
+  let snap = await getDocsFromCache(q).catch(() => null);
+  if (!snap || snap.empty) snap = await getDocs(q);
   return snap.docs.filter((d) => d.data().status !== 'archived').map((d) => d.id);
 }
 
@@ -655,68 +727,68 @@ export const taskApi = {
       const b = new Batcher();
       b.set(ref('tasks', id), data);
       b.log('tasks', 'created', String(task.title ?? ''), id);
-      await b.commit();
+      b.commitInBackground();
       return toTask(id, data) as Task;
     }),
   update: (id: string, patch: TaskInput) =>
     safe(async () => {
       const r = ref('tasks', id);
-      const cur = (await getDoc(r)).data() as StoredTask | undefined;
+      const cur = (await readDoc(r)).data() as StoredTask | undefined;
       if (!cur) throw new ApiError('La tarea ya no existe.', 'not-found');
       const next = derive({ ...TASK_DEFAULTS, ...cur, ...clean(patch), updated_at: now() });
       const b = new Batcher();
       b.set(r, next);
       b.log('tasks', 'updated', next.title, id);
-      await b.commit();
+      b.commitInBackground();
       return toTask(id, next) as Task;
     }),
-  /** Ajusta los alumnos asignados (añade y quita) de forma atómica. */
+  /** Ajusta los alumnos asignados (añade y quita). */
   setStudents: (taskId: string, studentIds: string[]) =>
-    safe(() =>
-      runTransaction(db(), async (tx) => {
-        const r = ref('tasks', taskId);
-        const cur = (await tx.get(r)).data() as StoredTask | undefined;
-        if (!cur) throw new ApiError('La tarea ya no existe.', 'not-found');
-        const assignments: Record<string, StoredAssignment> = {};
-        for (const sid of new Set(studentIds)) assignments[sid] = cur.assignments[sid] ?? newAssignment();
-        tx.set(r, derive({ ...cur, assignments, updated_at: now() }));
-      }),
-    ),
+    safe(async () => {
+      const r = ref('tasks', taskId);
+      const cur = (await readDoc(r)).data() as StoredTask | undefined;
+      if (!cur) throw new ApiError('La tarea ya no existe.', 'not-found');
+      const assignments: Record<string, StoredAssignment> = {};
+      for (const sid of new Set(studentIds)) assignments[sid] = cur.assignments[sid] ?? newAssignment();
+      const b = new Batcher();
+      b.set(r, derive({ ...cur, assignments, updated_at: now() }));
+      b.commitInBackground();
+    }),
   assignGroup: (taskId: string, groupId: string) =>
     safe(async () => {
       const members = await groupMemberIds(groupId);
-      return runTransaction(db(), async (tx) => {
-        const r = ref('tasks', taskId);
-        const cur = (await tx.get(r)).data() as StoredTask | undefined;
-        if (!cur) throw new ApiError('La tarea ya no existe.', 'not-found');
-        const assignments = { ...cur.assignments };
-        let added = 0;
-        for (const sid of members) if (!assignments[sid]) (assignments[sid] = newAssignment()), added++;
-        tx.set(r, derive({ ...cur, group_id: groupId, assignments, updated_at: now() }));
-        return added;
-      });
+      const r = ref('tasks', taskId);
+      const cur = (await readDoc(r)).data() as StoredTask | undefined;
+      if (!cur) throw new ApiError('La tarea ya no existe.', 'not-found');
+      const assignments = { ...cur.assignments };
+      let added = 0;
+      for (const sid of members) if (!assignments[sid]) (assignments[sid] = newAssignment()), added++;
+      const b = new Batcher();
+      b.set(r, derive({ ...cur, group_id: groupId, assignments, updated_at: now() }));
+      b.commitInBackground();
+      return added;
     }),
   remove: (id: string) =>
     safe(async () => {
-      const cur = (await getDoc(ref('tasks', id))).data();
+      const cur = (await readDoc(ref('tasks', id))).data();
       const b = new Batcher();
       b.delete(ref('tasks', id));
       b.log('tasks', 'deleted', String(cur?.title ?? ''), id);
-      await b.commit();
+      b.commitInBackground();
     }),
   removeAssignment: (assignmentId: string) =>
     safe(async () => {
       const { taskId, studentId } = parseAssignmentId(assignmentId);
-      await runTransaction(db(), async (tx) => {
-        const r = ref('tasks', taskId);
-        const t = (await tx.get(r)).data() as StoredTask | undefined;
-        if (!t) return;
-        const assignments = { ...t.assignments };
-        delete assignments[studentId];
-        tx.set(r, derive({ ...t, assignments, updated_at: now() }));
-      });
+      const r = ref('tasks', taskId);
+      const t = (await readDoc(r)).data() as StoredTask | undefined;
+      if (!t) return;
+      const assignments = { ...t.assignments };
+      delete assignments[studentId];
+      const b = new Batcher();
+      b.set(r, derive({ ...t, assignments, updated_at: now() }));
+      b.commitInBackground();
     }),
-  /** Cambia el estado de varias asignaciones (agrupadas por tarea, en una transacción). */
+  /** Cambia el estado de varias asignaciones (agrupadas por tarea). */
   setStatus: (assignmentIds: string[], status: AssignmentStatus) =>
     safe(async () => {
       const byTask = new Map<string, string[]>();
@@ -724,38 +796,38 @@ export const taskApi = {
         const { taskId, studentId } = parseAssignmentId(aid);
         byTask.set(taskId, [...(byTask.get(taskId) ?? []), studentId]);
       }
-      await runTransaction(db(), async (tx) => {
-        const docs = await Promise.all([...byTask.keys()].map(async (tid) => [tid, (await tx.get(ref('tasks', tid))).data() as StoredTask | undefined] as const));
-        for (const [tid, t] of docs) {
-          if (!t) continue;
-          const assignments = { ...t.assignments };
-          for (const sid of byTask.get(tid)!) if (assignments[sid]) assignments[sid] = stamp(assignments[sid], status);
-          tx.set(ref('tasks', tid), derive({ ...t, assignments, updated_at: now() }));
-        }
-      });
+      const b = new Batcher();
+      for (const [tid, sids] of byTask) {
+        const t = (await readDoc(ref('tasks', tid))).data() as StoredTask | undefined;
+        if (!t) continue;
+        const assignments = { ...t.assignments };
+        for (const sid of sids) if (assignments[sid]) assignments[sid] = stamp(assignments[sid], status);
+        b.set(ref('tasks', tid), derive({ ...t, assignments, updated_at: now() }));
+      }
+      b.commitInBackground();
       return [] as Assignment[];
     }),
   setStatusForTasks: (taskIds: string[], status: AssignmentStatus) =>
     safe(async () => {
-      await runTransaction(db(), async (tx) => {
-        const docs = await Promise.all(taskIds.map(async (tid) => [tid, (await tx.get(ref('tasks', tid))).data() as StoredTask | undefined] as const));
-        for (const [tid, t] of docs) {
-          if (!t) continue;
-          const assignments = Object.fromEntries(Object.entries(t.assignments).map(([sid, a]) => [sid, stamp(a, status)]));
-          tx.set(ref('tasks', tid), derive({ ...t, assignments, updated_at: now() }));
-        }
-      });
+      const b = new Batcher();
+      for (const tid of taskIds) {
+        const t = (await readDoc(ref('tasks', tid))).data() as StoredTask | undefined;
+        if (!t) continue;
+        const assignments = Object.fromEntries(Object.entries(t.assignments).map(([sid, a]) => [sid, stamp(a, status)]));
+        b.set(ref('tasks', tid), derive({ ...t, assignments, updated_at: now() }));
+      }
+      b.commitInBackground();
       return [] as Assignment[];
     }),
   setFeedback: (assignmentId: string, feedback: string) =>
     safe(async () => {
       const { taskId, studentId } = parseAssignmentId(assignmentId);
-      await runTransaction(db(), async (tx) => {
-        const r = ref('tasks', taskId);
-        const t = (await tx.get(r)).data() as StoredTask | undefined;
-        if (!t?.assignments[studentId]) return;
-        tx.set(r, derive({ ...t, assignments: { ...t.assignments, [studentId]: { ...t.assignments[studentId], feedback, updated_at: now() } } }));
-      });
+      const r = ref('tasks', taskId);
+      const t = (await readDoc(r)).data() as StoredTask | undefined;
+      if (!t?.assignments[studentId]) return;
+      const b = new Batcher();
+      b.set(r, derive({ ...t, assignments: { ...t.assignments, [studentId]: { ...t.assignments[studentId], feedback, updated_at: now() } } }));
+      b.commitInBackground();
     }),
 
   /**
@@ -771,7 +843,7 @@ export const taskApi = {
       const scope = studentId ?? 'all';
       let created = 0;
       for (const tid of taskIds) {
-        const src = (await getDoc(ref('tasks', tid))).data() as StoredTask | undefined;
+        const src = (await readDoc(ref('tasks', tid))).data() as StoredTask | undefined;
         if (!src || src.week_start === targetWeek) continue;
         const key = `${tid}_${targetWeek}_${scope}`;
         const shift = Math.round((Date.UTC(y, m - 1, d) - Date.parse(src.week_start + 'T00:00:00Z')) / 86400_000);
@@ -809,7 +881,7 @@ export const taskApi = {
       if (created) {
         const b = new Batcher();
         b.log('tasks', 'created', `${created} ${created === 1 ? 'tarea copiada' : 'tareas copiadas'} a la semana del ${targetWeek.split('-').reverse().join('/')}`, null);
-        await b.commit();
+        b.commitInBackground();
       }
       return created;
     }),
@@ -830,22 +902,27 @@ export const noteApi = {
     safe(async () => {
       const id = newId('notes');
       const data = { lesson_id: null, kind: 'observation', category_id: null, noted_on: new Date().toISOString().slice(0, 10), ...clean(n), created_at: now(), updated_at: now() };
-      const b = writeBatch(db());
+      const b = new Batcher();
       b.set(ref('notes', id), data);
-      await b.commit();
+      b.commitInBackground();
       return withId<ProgressNote>(id, data);
     }),
   update: (id: string, patch: Partial<ProgressNote>) =>
     safe(async () => {
       const r = ref('notes', id);
-      const cur = (await getDoc(r)).data();
+      const cur = (await readDoc(r)).data();
       const next = { ...cur, ...clean(patch), updated_at: now() };
-      const b = writeBatch(db());
+      const b = new Batcher();
       b.set(r, next);
-      await b.commit();
+      b.commitInBackground();
       return withId<ProgressNote>(id, next);
     }),
-  remove: (id: string) => safe(() => deleteDoc(ref('notes', id))),
+  remove: (id: string) =>
+    safe(async () => {
+      const b = new Batcher();
+      b.delete(ref('notes', id));
+      b.commitInBackground();
+    }),
   search: (q: string) => safe(async () => (await noteApi.recent()).filter((n) => norm(n.body).includes(norm(q))).slice(0, 50)),
 };
 
@@ -863,28 +940,28 @@ export const goalApi = {
       const b = new Batcher();
       b.set(ref('goals', id), data);
       b.log('goals', 'created', String(data.title ?? ''), id);
-      await b.commit();
+      b.commitInBackground();
       return withId<Goal>(id, data);
     }),
   update: (id: string, patch: Partial<Goal>) =>
     safe(async () => {
       const r = ref('goals', id);
-      const cur = (await getDoc(r)).data();
+      const cur = (await readDoc(r)).data();
       if (!cur) throw new ApiError('El objetivo ya no existe.', 'not-found');
       const next: DocumentData = { ...cur, ...clean(patch), updated_at: now() };
       const b = new Batcher();
       b.set(r, next);
       b.log('goals', 'updated', String(next.title ?? ''), id);
-      await b.commit();
+      b.commitInBackground();
       return withId<Goal>(id, next);
     }),
   remove: (id: string) =>
     safe(async () => {
-      const cur = (await getDoc(ref('goals', id))).data();
+      const cur = (await readDoc(ref('goals', id))).data();
       const b = new Batcher();
       b.delete(ref('goals', id));
       b.log('goals', 'deleted', String(cur?.title ?? ''), id);
-      await b.commit();
+      b.commitInBackground();
     }),
 };
 

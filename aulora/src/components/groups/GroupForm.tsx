@@ -1,5 +1,5 @@
 'use client';
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import { Dialog } from '@/components/ui/overlay';
 import { Button, Field, LabeledInput, NumberInput, Select, Textarea, rangeError } from '@/components/ui/controls';
@@ -14,6 +14,12 @@ export function GroupForm({ group, onClose }: { group?: Group; onClose: () => vo
   const { students, membersOf } = useLookup();
   const profile = useProfile();
   const editing = !!group;
+  // id del elemento nuevo generado al abrir: su ficha se precarga mientras se rellena el formulario
+  const [presetId] = useState(() => (editing ? null : groupApi.newId()));
+  useEffect(() => {
+    if (presetId) // precarga completa (datos y código) de la ficha, no solo hasta la pantalla de carga
+    router.prefetch(`/grupos/${presetId}`, { kind: 'full' as never });
+  }, [presetId, router]);
   const initialMembers = group ? membersOf(group.id) : [];
   const [form, setForm] = useState<GroupInput>(() => ({
     name: group?.name ?? '',
@@ -35,7 +41,7 @@ export function GroupForm({ group, onClose }: { group?: Group; onClose: () => vo
   const save = useAction(
     async () => {
       const clean = { ...form, name: form.name.trim(), usual_time: form.usual_time || null, lesson_minutes: minutes ?? 60 };
-      const saved = editing ? await groupApi.update(group.id, clean) : await groupApi.create(clean);
+      const saved = editing ? await groupApi.update(group.id, clean) : await groupApi.create(clean, presetId ?? undefined);
       await groupApi.setMembers(saved.id, memberIds, initialMembers);
       return saved;
     },
