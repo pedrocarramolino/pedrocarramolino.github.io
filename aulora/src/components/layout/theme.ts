@@ -17,21 +17,26 @@ function apply(pref: ThemePref) {
   const dark = pref === 'dark' || (pref === 'system' && systemDark());
   document.documentElement.classList.toggle('dark', dark);
   document.documentElement.style.colorScheme = dark ? 'dark' : 'light';
-  syncThemeColor(pref, dark);
+  syncThemeColor(dark);
 }
 
+export const THEME_COLORS = { light: '#f7f7f5', dark: '#121214' } as const;
+
 /**
- * Ajusta las etiquetas theme-color (barra de estado de iOS/Safari).
- * Con «Sistema» cada etiqueta conserva su media query; si el usuario fuerza
- * un modo, todas toman ese color para que la barra no contradiga a la app.
+ * Pone el color de la barra de estado de iOS/Safari (theme-color).
+ * Se sustituye la etiqueta por una nueva en lugar de cambiar su valor:
+ * iOS (sobre todo en apps añadidas a la pantalla de inicio) solo repinta la
+ * barra cuando aparece una etiqueta nueva.
  */
-function syncThemeColor(pref: ThemePref, dark: boolean) {
-  document.querySelectorAll('meta[name="theme-color"]').forEach((m) => {
-    const media = m.getAttribute('media') ?? '';
-    const forSchemeDark = media.includes('dark');
-    const color = pref === 'system' ? (media ? (forSchemeDark ? '#121214' : '#f7f7f5') : dark ? '#121214' : '#f7f7f5') : dark ? '#121214' : '#f7f7f5';
-    m.setAttribute('content', color);
-  });
+function syncThemeColor(dark: boolean) {
+  const color = dark ? THEME_COLORS.dark : THEME_COLORS.light;
+  const current = document.querySelectorAll('meta[name="theme-color"]');
+  if (current.length === 1 && current[0].getAttribute('content') === color) return;
+  current.forEach((m) => m.remove());
+  const meta = document.createElement('meta');
+  meta.name = 'theme-color';
+  meta.content = color;
+  document.head.appendChild(meta);
 }
 
 /** Preferencia de tema (se guarda en localStorage: solo preferencias de interfaz). */
@@ -65,4 +70,4 @@ export function useTheme() {
 }
 
 /** Script que se ejecuta antes del primer pintado para evitar parpadeos. */
-export const themeScript = `(function(){try{var p=localStorage.getItem('${KEY}');var d=p==='dark'||(p!=='light'&&matchMedia('(prefers-color-scheme: dark)').matches);var r=document.documentElement;if(d)r.classList.add('dark');r.style.colorScheme=d?'dark':'light';if(p==='dark'||p==='light'){var c=d?'#121214':'#f7f7f5';document.querySelectorAll('meta[name="theme-color"]').forEach(function(m){m.setAttribute('content',c)})}}catch(e){}})()`;
+export const themeScript = `(function(){try{var p=localStorage.getItem('${KEY}');var d=p==='dark'||(p!=='light'&&matchMedia('(prefers-color-scheme: dark)').matches);var r=document.documentElement;if(d)r.classList.add('dark');r.style.colorScheme=d?'dark':'light';var m=document.createElement('meta');m.name='theme-color';m.content=d?'${THEME_COLORS.dark}':'${THEME_COLORS.light}';document.head.appendChild(m)}catch(e){}})()`;

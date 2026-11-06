@@ -18,12 +18,9 @@ export const viewport: Viewport = {
   width: 'device-width',
   initialScale: 1,
   viewportFit: 'cover',
-  // color de la barra de estado/navegación de Safari según el modo del sistema
-  // (si el usuario fuerza claro u oscuro, theme.ts lo ajusta)
-  themeColor: [
-    { media: '(prefers-color-scheme: light)', color: '#f7f7f5' },
-    { media: '(prefers-color-scheme: dark)', color: '#121214' },
-  ],
+  // La etiqueta theme-color (barra de estado de iOS) la gestiona theme.ts:
+  // se crea antes del primer pintado y se sustituye en cada cambio de tema,
+  // porque iOS no repinta la barra si solo cambia su valor.
   colorScheme: 'light dark',
 };
 

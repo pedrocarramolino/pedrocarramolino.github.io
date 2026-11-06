@@ -381,7 +381,21 @@ export async function run({ browser, base, shots, admin }) {
     }));
     expect(sys.html === 'rgb(18, 18, 20)', `fondo de html no oscuro: ${sys.html}`);
     expect(sys.scheme === 'dark', `color-scheme: ${sys.scheme}`);
-    expect(sys.metas.length >= 1 && sys.metas.every((c) => c === '#121214'), `theme-color: ${sys.metas.join(',')}`);
+    expect(sys.metas.length === 1 && sys.metas[0] === '#121214', `theme-color: ${sys.metas.join(',')}`);
+    // al cambiar de tema sin recargar, la etiqueta se sustituye por una nueva (iOS repinta la barra)
+    const swap = async (label, expected) => {
+      const before = await page.evaluateHandle(() => document.querySelector('meta[name="theme-color"]'));
+      await page.getByRole('tab', { name: new RegExp(label) }).click();
+      const r = await page.evaluate((old) => {
+        const metas = [...document.querySelectorAll('meta[name="theme-color"]')];
+        return { n: metas.length, color: metas[0]?.getAttribute('content'), replaced: metas[0] !== old, html: getComputedStyle(document.documentElement).backgroundColor };
+      }, before);
+      expect(r.n === 1 && r.color === expected && r.replaced, `${label}: ${JSON.stringify(r)}`);
+    };
+    await swap('Claro', '#f7f7f5');
+    await swap('Oscuro', '#121214');
+    await swap('Claro', '#f7f7f5');
+    await page.getByRole('tab', { name: /Oscuro/ }).click();
     await page.screenshot({ path: `${shots}/escritorio-ajustes-oscuro.png` });
     await page.goto(base + '/');
     await page.screenshot({ path: `${shots}/escritorio-inicio-oscuro.png` });
@@ -483,7 +497,7 @@ export async function run({ browser, base, shots, admin }) {
         };
       });
       expect(r.dark && r.html === 'rgb(18, 18, 20)', `${u}: tema ${JSON.stringify(r)}`);
-      expect(r.metas.some((m) => m.includes('dark') && m.endsWith('#121214')), `${u}: theme-color ${r.metas.join(' ')}`);
+      expect(r.metas.length === 1 && r.metas[0].endsWith('#121214'), `${u}: theme-color ${r.metas.join(' ')}`);
       expect(!r.offenders.length, `${u}: fondos claros en modo oscuro: ${r.offenders.join(' | ')}`);
     }
     await d.screenshot({ path: `${shots}/movil-oscuro-ajustes.png` });
