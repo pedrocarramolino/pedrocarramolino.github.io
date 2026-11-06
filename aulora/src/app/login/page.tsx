@@ -7,6 +7,8 @@ import { firebaseAuth } from '@/lib/firebase';
 import { profileApi } from '@/services/api';
 import { useAuth } from '@/components/layout/auth';
 import { Button, LabeledInput } from '@/components/ui/controls';
+import { PasswordChecklist, PasswordInput } from '@/components/ui/PasswordInput';
+import { validateNewPassword } from '@/lib/password';
 import { Logo } from '@/components/layout/Logo';
 
 type Mode = 'signin' | 'signup' | 'reset';
@@ -20,7 +22,8 @@ function translate(e: unknown) {
     'auth/user-not-found': 'Correo o contraseña incorrectos.',
     'auth/invalid-email': 'El correo no es válido.',
     'auth/email-already-in-use': 'Ya existe una cuenta con ese correo. Inicia sesión.',
-    'auth/weak-password': 'La contraseña debe tener al menos 6 caracteres.',
+    'auth/weak-password': 'La contraseña es demasiado débil: usa al menos 8 caracteres con letras y números.',
+    'auth/password-does-not-meet-requirements': 'La contraseña no cumple los requisitos de seguridad del proyecto.',
     'auth/too-many-requests': 'Demasiados intentos. Espera unos minutos.',
     'auth/network-request-failed': 'No hay conexión con el servidor.',
     'auth/operation-not-allowed': 'El registro de nuevas cuentas está desactivado.',
@@ -35,11 +38,17 @@ function LoginForm() {
   const [mode, setMode] = useState<Mode>('signin');
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
+  const [confirm, setConfirm] = useState('');
   const [name, setName] = useState('');
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [sent, setSent] = useState<string | null>(null);
 
+  const switchMode = (m: Mode) => {
+    setMode(m);
+    setError(null);
+    setConfirm('');
+  };
   const { user, loading: authLoading } = useAuth();
   const next = (() => {
     const n = params.get('next');
@@ -63,6 +72,11 @@ function LoginForm() {
         return;
       }
       if (mode === 'signup') {
+        const problem = validateNewPassword(password, confirm);
+        if (problem) {
+          setError(problem);
+          return;
+        }
         const cred = await createUserWithEmailAndPassword(auth, email.trim(), password);
         const display = name.trim() || email.trim().split('@')[0];
         await updateProfile(cred.user, { displayName: display });
@@ -114,15 +128,19 @@ function LoginForm() {
             {mode === 'signup' ? <LabeledInput label="Tu nombre" value={name} onChange={(e) => setName(e.target.value)} autoComplete="name" /> : null}
             <LabeledInput label="Correo electrónico" type="email" inputMode="email" autoComplete="email" value={email} onChange={(e) => setEmail(e.target.value)} required />
             {mode !== 'reset' ? (
-              <LabeledInput
+              <PasswordInput
                 label="Contraseña"
-                type="password"
                 autoComplete={mode === 'signup' ? 'new-password' : 'current-password'}
                 value={password}
-                onChange={(e) => setPassword(e.target.value)}
-                minLength={6}
+                onChange={setPassword}
                 required
               />
+            ) : null}
+            {mode === 'signup' ? (
+              <>
+                <PasswordInput label="Repite la contraseña" autoComplete="new-password" value={confirm} onChange={setConfirm} required />
+                <PasswordChecklist password={password} confirm={confirm} />
+              </>
             ) : null}
             {error ? (
               <p role="alert" className="rounded-lg bg-danger-soft px-3 py-2 text-sm text-danger">
@@ -136,15 +154,15 @@ function LoginForm() {
             <div className="flex flex-col items-center gap-1.5 pt-1 text-sm">
               {mode === 'signin' ? (
                 <>
-                  <button type="button" className="text-muted hover:text-fg" onClick={() => setMode('reset')}>
+                  <button type="button" className="text-muted hover:text-fg" onClick={() => switchMode('reset')}>
                     ¿Has olvidado la contraseña?
                   </button>
-                  <button type="button" className="font-medium text-accent" onClick={() => setMode('signup')}>
+                  <button type="button" className="font-medium text-accent" onClick={() => switchMode('signup')}>
                     Crear una cuenta nueva
                   </button>
                 </>
               ) : (
-                <button type="button" className="font-medium text-accent" onClick={() => setMode('signin')}>
+                <button type="button" className="font-medium text-accent" onClick={() => switchMode('signin')}>
                   Ya tengo cuenta
                 </button>
               )}
