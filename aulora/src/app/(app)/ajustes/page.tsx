@@ -8,6 +8,8 @@ import { Card, CardHeader, PageHeader } from '@/components/ui/display';
 import { useConfirm } from '@/components/ui/overlay';
 import { cn } from '@/components/ui/cn';
 import { ColorPicker } from '@/components/ui/pickers';
+import { PasswordChecklist, PasswordInput } from '@/components/ui/PasswordInput';
+import { validateNewPassword } from '@/lib/password';
 import { useTheme, type ThemePref } from '@/components/layout/theme';
 import { useAction, useCategories, useProfile } from '@/hooks/data';
 import { categoryApi, exportAll, profileApi } from '@/services/api';
@@ -211,8 +213,9 @@ function PasswordCard({ highlight = false }: { highlight?: boolean }) {
   const [loading, setLoading] = useState(false);
   const submit = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (pw.length < 6) return toast.error('La contraseña debe tener al menos 6 caracteres');
-    if (pw !== pw2) return toast.error('Las contraseñas no coinciden');
+    const problem = validateNewPassword(pw, pw2);
+    if (problem) return toast.error(problem);
+    if (pw === current) return toast.error('La nueva contraseña debe ser distinta de la actual');
     const user = firebaseAuth().currentUser;
     if (!user?.email) return;
     setLoading(true);
@@ -234,17 +237,12 @@ function PasswordCard({ highlight = false }: { highlight?: boolean }) {
   return (
     <Card className={cn(highlight && 'border-accent ring-3 ring-[var(--ring)]')}>
       <CardHeader title="Cambiar contraseña" />
-      <form onSubmit={submit} className="grid grid-cols-1 gap-3 px-4 pb-4 sm:grid-cols-3 sm:items-end">
-        <Field label="Contraseña actual">
-          <Input type="password" autoComplete="current-password" value={current} onChange={(e) => setCurrent(e.target.value)} />
-        </Field>
-        <Field label="Nueva contraseña">
-          <Input type="password" autoComplete="new-password" value={pw} onChange={(e) => setPw(e.target.value)} />
-        </Field>
-        <Field label="Repítela">
-          <Input type="password" autoComplete="new-password" value={pw2} onChange={(e) => setPw2(e.target.value)} />
-        </Field>
-        <div className="flex justify-end sm:col-span-3">
+      <form onSubmit={submit} className="grid grid-cols-1 gap-3 px-4 pb-4 sm:grid-cols-3 sm:items-start">
+        <PasswordInput label="Contraseña actual" autoComplete="current-password" value={current} onChange={setCurrent} />
+        <PasswordInput label="Nueva contraseña" autoComplete="new-password" value={pw} onChange={setPw} />
+        <PasswordInput label="Repítela" autoComplete="new-password" value={pw2} onChange={setPw2} />
+        <div className="sm:col-span-2">{pw || pw2 ? <PasswordChecklist password={pw} confirm={pw2} /> : null}</div>
+        <div className="flex justify-end">
           <Button type="submit" variant="primary" loading={loading} disabled={!pw || !current}>
             Actualizar contraseña
           </Button>

@@ -18,7 +18,7 @@ Aulora es una aplicación web para gestionar a tus alumnos, grupos, clases, agen
 | **Ficha de clase** | Contenido previsto (se guarda solo), tareas de la semana y de las 4 semanas anteriores, marcar tareas como realizadas o revisadas, observaciones, objetivos para la próxima clase, resumen al finalizar (queda en el historial) y la clase anterior como referencia. |
 | **Seguimiento** | Clases realizadas, cumplimiento de tareas, evolución por categorías, últimas 8 semanas, objetivos y anotaciones (observación, logro, dificultad, aspecto a mejorar). También hay una vista general de todos los alumnos. |
 | **Búsqueda** | Buscador global con ⌘K / Ctrl+K o `/` (sin distinguir tildes) y búsqueda avanzada con filtros por alumno, grupo, semana, categoría, estado y fechas. |
-| **Ajustes** | Perfil, horario de la agenda, duración por defecto, tema claro/oscuro/sistema, categorías editables, cambio de contraseña, exportación de una copia de seguridad en JSON y cierre de sesión. |
+| **Ajustes** | Perfil, horario de la agenda, duración por defecto, tema claro/oscuro/sistema, categorías editables, cambio de contraseña (con confirmación, requisitos mínimos y opción de verla), exportación de una copia de seguridad en JSON y cierre de sesión. |
 
 **Atajos de teclado:** `T` nueva tarea · `C` nueva clase · `A` nuevo alumno · `G` nuevo grupo · `⌘K` buscar.
 
@@ -151,7 +151,7 @@ Las pruebas usan los **emuladores oficiales de Firebase** (necesitan Java 11 o s
 ```bash
 npm test                        # Pruebas unitarias (recurrencia, conflictos, fechas, estados)
 npm run rules:test              # Reglas de seguridad de Firestore (9 casos)
-npm run e2e:build && npm run e2e  # 29 escenarios E2E con Playwright (escritorio, iPhone, iPad)
+npm run e2e:build && npm run e2e  # 31 escenarios E2E con Playwright (escritorio, iPhone, iPad)
 ```
 
 `npm run e2e:build` compila la app con la configuración de `.env.e2e` (proyecto de demostración `demo-aulora` y emuladores) sin tocar tu `.env.local`.

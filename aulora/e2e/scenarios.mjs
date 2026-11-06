@@ -68,7 +68,24 @@ export async function run({ browser, base, shots, admin }) {
     await page.getByRole('button', { name: 'Crear una cuenta nueva' }).click();
     await page.getByLabel('Tu nombre').fill('Pedro Carramolino');
     await page.getByLabel('Correo electrónico').fill('pedro@test.es');
-    await page.getByLabel('Contraseña').fill('secreto123');
+    // requisitos mínimos y confirmación
+    await page.getByLabel('Contraseña', { exact: true }).fill('corta');
+    await page.getByLabel('Repite la contraseña', { exact: true }).fill('corta');
+    await page.getByRole('button', { name: 'Crear cuenta' }).click();
+    await page.getByRole('alert').getByText(/no cumple los requisitos/).waitFor();
+    await page.getByLabel('Contraseña', { exact: true }).fill('secreto123');
+    await page.getByLabel('Repite la contraseña', { exact: true }).fill('secreto124');
+    await page.getByRole('button', { name: 'Crear cuenta' }).click();
+    await page.getByRole('alert').getByText('Las contraseñas no coinciden.').waitFor();
+    // mostrar y ocultar la contraseña
+    const pw = page.getByLabel('Contraseña', { exact: true });
+    expect((await pw.getAttribute('type')) === 'password', 'la contraseña debería estar oculta');
+    await page.getByRole('button', { name: 'Mostrar contraseña' }).first().click();
+    expect((await pw.getAttribute('type')) === 'text', 'la contraseña debería verse');
+    await page.getByRole('button', { name: 'Ocultar contraseña' }).first().click();
+    expect((await pw.getAttribute('type')) === 'password', 'la contraseña debería volver a ocultarse');
+    await page.getByLabel('Repite la contraseña', { exact: true }).fill('secreto123');
+    await page.getByText('Las dos contraseñas coinciden').waitFor();
     await page.getByRole('button', { name: 'Crear cuenta' }).click();
     await page.waitForURL(base + '/');
     await page.getByRole('heading', { name: /Pedro/ }).waitFor();
@@ -390,7 +407,8 @@ export async function run({ browser, base, shots, admin }) {
     await p2.goto(base + '/login');
     await p2.getByRole('button', { name: 'Crear una cuenta nueva' }).click();
     await p2.getByLabel('Correo electrónico').fill('otra@test.es');
-    await p2.getByLabel('Contraseña').fill('secreto123');
+    await p2.getByLabel('Contraseña', { exact: true }).fill('secreto123');
+    await p2.getByLabel('Repite la contraseña', { exact: true }).fill('secreto123');
     await p2.getByRole('button', { name: 'Crear cuenta' }).click();
     await p2.waitForURL(base + '/');
     await p2.goto(base + '/alumnos');
@@ -443,12 +461,31 @@ export async function run({ browser, base, shots, admin }) {
     await tctx.close();
   });
 
-  await step('cerrar sesión', async () => {
+  await step('cambiar la contraseña con confirmación', async () => {
+    await page.goto(base + '/ajustes');
+    await page.getByLabel('Contraseña actual', { exact: true }).fill('secreto123');
+    await page.getByLabel('Nueva contraseña', { exact: true }).fill('nuevaClave2026');
+    await page.getByLabel('Repítela', { exact: true }).fill('nuevaClave2025');
+    await page.getByRole('button', { name: 'Actualizar contraseña' }).click();
+    await toast('Las contraseñas no coinciden');
+    await page.getByLabel('Repítela', { exact: true }).fill('nuevaClave2026');
+    await page.getByRole('button', { name: 'Mostrar contraseña' }).nth(1).click();
+    expect((await page.getByLabel('Nueva contraseña', { exact: true }).getAttribute('type')) === 'text', 'debería verse la nueva contraseña');
+    await page.getByRole('button', { name: 'Actualizar contraseña' }).click();
+    await toast('Contraseña actualizada');
+  });
+
+  await step('cerrar sesión y entrar con la nueva contraseña', async () => {
     await page.goto(base + '/ajustes');
     await page.getByRole('button', { name: 'Cerrar sesión' }).click();
     await page.waitForURL(/\/login/);
     await page.goto(base + '/');
     await page.waitForURL(/\/login/);
+    await page.getByLabel('Correo electrónico').fill('pedro@test.es');
+    await page.getByLabel('Contraseña', { exact: true }).fill('nuevaClave2026');
+    await page.getByRole('button', { name: 'Entrar' }).click();
+    await page.waitForURL(base + '/');
+    await page.getByRole('heading', { name: /Pedro/ }).waitFor();
   });
 
   const relevant = errors.filter((e) => !/hydrat/i.test(e) || true);

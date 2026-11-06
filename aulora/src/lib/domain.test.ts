@@ -66,3 +66,18 @@ describe('estados de tarea', () => {
     expect(nextStatus('reviewed')).toBe('pending');
   });
 });
+
+import { passwordIssues, validateNewPassword } from './password';
+
+describe('contraseñas', () => {
+  it('exige 8 caracteres, una letra y un número', () => {
+    expect(passwordIssues('abc')).toEqual(['Al menos 8 caracteres', 'Al menos un número']);
+    expect(passwordIssues('12345678')).toEqual(['Al menos una letra']);
+    expect(passwordIssues('ñandú2026')).toEqual([]);
+  });
+  it('valida la confirmación', () => {
+    expect(validateNewPassword('secreto123', 'secreto124')).toBe('Las contraseñas no coinciden.');
+    expect(validateNewPassword('secreto123', 'secreto123')).toBeNull();
+    expect(validateNewPassword('corta1', 'corta1')).toMatch(/no cumple/);
+  });
+});
