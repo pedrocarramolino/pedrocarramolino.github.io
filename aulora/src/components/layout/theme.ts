@@ -16,7 +16,22 @@ function systemDark() {
 function apply(pref: ThemePref) {
   const dark = pref === 'dark' || (pref === 'system' && systemDark());
   document.documentElement.classList.toggle('dark', dark);
-  document.querySelector('meta[name="theme-color"]')?.setAttribute('content', dark ? '#121214' : '#f7f7f5');
+  document.documentElement.style.colorScheme = dark ? 'dark' : 'light';
+  syncThemeColor(pref, dark);
+}
+
+/**
+ * Ajusta las etiquetas theme-color (barra de estado de iOS/Safari).
+ * Con «Sistema» cada etiqueta conserva su media query; si el usuario fuerza
+ * un modo, todas toman ese color para que la barra no contradiga a la app.
+ */
+function syncThemeColor(pref: ThemePref, dark: boolean) {
+  document.querySelectorAll('meta[name="theme-color"]').forEach((m) => {
+    const media = m.getAttribute('media') ?? '';
+    const forSchemeDark = media.includes('dark');
+    const color = pref === 'system' ? (media ? (forSchemeDark ? '#121214' : '#f7f7f5') : dark ? '#121214' : '#f7f7f5') : dark ? '#121214' : '#f7f7f5';
+    m.setAttribute('content', color);
+  });
 }
 
 /** Preferencia de tema (se guarda en localStorage: solo preferencias de interfaz). */
@@ -50,4 +65,4 @@ export function useTheme() {
 }
 
 /** Script que se ejecuta antes del primer pintado para evitar parpadeos. */
-export const themeScript = `(function(){try{var p=localStorage.getItem('${KEY}');var d=p==='dark'||(p!=='light'&&matchMedia('(prefers-color-scheme: dark)').matches);if(d)document.documentElement.classList.add('dark')}catch(e){}})()`;
+export const themeScript = `(function(){try{var p=localStorage.getItem('${KEY}');var d=p==='dark'||(p!=='light'&&matchMedia('(prefers-color-scheme: dark)').matches);var r=document.documentElement;if(d)r.classList.add('dark');r.style.colorScheme=d?'dark':'light';if(p==='dark'||p==='light'){var c=d?'#121214':'#f7f7f5';document.querySelectorAll('meta[name="theme-color"]').forEach(function(m){m.setAttribute('content',c)})}}catch(e){}})()`;
