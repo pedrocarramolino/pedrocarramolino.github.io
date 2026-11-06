@@ -91,6 +91,8 @@
 
 @layer base {
   html {
+    /* iOS pinta este fondo en el rebote del scroll, el notch y la zona inferior */
+    background-color: var(--bg);
     -webkit-text-size-adjust: 100%;
     text-rendering: optimizeLegibility;
   }

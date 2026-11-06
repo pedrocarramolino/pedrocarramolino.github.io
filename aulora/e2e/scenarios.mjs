@@ -373,6 +373,15 @@ export async function run({ browser, base, shots, admin }) {
     await toast('Categoría creada');
     await page.reload();
     expect(await page.evaluate(() => document.documentElement.classList.contains('dark')), 'el tema no persiste');
+    // zonas que pinta el sistema en iOS: fondo de <html> y barras (theme-color)
+    const sys = await page.evaluate(() => ({
+      html: getComputedStyle(document.documentElement).backgroundColor,
+      scheme: getComputedStyle(document.documentElement).colorScheme,
+      metas: [...document.querySelectorAll('meta[name="theme-color"]')].map((m) => m.getAttribute('content')),
+    }));
+    expect(sys.html === 'rgb(18, 18, 20)', `fondo de html no oscuro: ${sys.html}`);
+    expect(sys.scheme === 'dark', `color-scheme: ${sys.scheme}`);
+    expect(sys.metas.length >= 1 && sys.metas.every((c) => c === '#121214'), `theme-color: ${sys.metas.join(',')}`);
     await page.screenshot({ path: `${shots}/escritorio-ajustes-oscuro.png` });
     await page.goto(base + '/');
     await page.screenshot({ path: `${shots}/escritorio-inicio-oscuro.png` });
@@ -446,6 +455,41 @@ export async function run({ browser, base, shots, admin }) {
     await m.getByRole('dialog').waitFor();
     await m.screenshot({ path: `${shots}/movil-nueva-tarea.png` });
     await mctx.close();
+  });
+
+  await step('iPhone en modo oscuro del sistema: todo oscuro', async () => {
+    const { devices } = await import('node:module').then((m) => m.createRequire(import.meta.url)('playwright'));
+    const dctx = await browser.newContext({ ...devices['iPhone 14'], colorScheme: 'dark', timezoneId: 'Europe/Madrid', storageState: await ctx.storageState({ indexedDB: true }) });
+    const d = await dctx.newPage();
+    await d.goto(base + '/login');
+    await d.evaluate(() => localStorage.setItem('aulora-theme', 'system'));
+    for (const u of ['/', '/tareas', '/agenda', '/ajustes']) {
+      await d.goto(base + u);
+      await d.getByRole('navigation', { name: 'Navegación principal' }).waitFor();
+      const r = await d.evaluate(() => {
+        const light = (c) => {
+          const m = c.match(/\d+(\.\d+)?/g)?.map(Number) ?? [0, 0, 0, 0];
+          if (m.length === 4 && m[3] === 0) return false;
+          return 0.299 * m[0] + 0.587 * m[1] + 0.114 * m[2] > 200;
+        };
+        const offenders = [...document.querySelectorAll('body, body *')]
+          .filter((el) => el.getBoundingClientRect().width > 40 && light(getComputedStyle(el).backgroundColor))
+          .map((el) => el.tagName + '.' + String(el.className).slice(0, 60));
+        return {
+          dark: document.documentElement.classList.contains('dark'),
+          html: getComputedStyle(document.documentElement).backgroundColor,
+          metas: [...document.querySelectorAll('meta[name="theme-color"]')].map((m) => `${m.getAttribute('media') ?? ''}=${m.getAttribute('content')}`),
+          offenders: offenders.slice(0, 5),
+        };
+      });
+      expect(r.dark && r.html === 'rgb(18, 18, 20)', `${u}: tema ${JSON.stringify(r)}`);
+      expect(r.metas.some((m) => m.includes('dark') && m.endsWith('#121214')), `${u}: theme-color ${r.metas.join(' ')}`);
+      expect(!r.offenders.length, `${u}: fondos claros en modo oscuro: ${r.offenders.join(' | ')}`);
+    }
+    await d.screenshot({ path: `${shots}/movil-oscuro-ajustes.png` });
+    await d.goto(base + '/');
+    await d.screenshot({ path: `${shots}/movil-oscuro-inicio.png` });
+    await dctx.close();
   });
 
   await step('tablet (iPad): agenda semanal', async () => {
