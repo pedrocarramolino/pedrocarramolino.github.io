@@ -1,6 +1,7 @@
 'use client';
 import { Suspense, useEffect, useMemo, useState } from 'react';
-import { usePathname, useRouter, useSearchParams } from 'next/navigation';
+import { usePathname, useSearchParams } from 'next/navigation';
+import { replaceUrl } from '@/lib/url';
 import { addDays, addMonths } from 'date-fns';
 import { ChevronLeft, ChevronRight, Plus } from 'lucide-react';
 import { Button, Segmented, Select } from '@/components/ui/controls';
@@ -18,7 +19,6 @@ type View = 'dia' | 'semana' | 'mes';
 
 function AgendaPage() {
   const params = useSearchParams();
-  const router = useRouter();
   const pathname = usePathname();
   const ui = useUi();
   const lookup = useLookup();
@@ -39,7 +39,7 @@ function AgendaPage() {
       if (v) p.set(k, v);
       else p.delete(k);
     }
-    router.replace(`${pathname}?${p.toString()}`, { scroll: false });
+    replaceUrl(`${pathname}?${p.toString()}`);
   };
 
   const { days, from, to } = useMemo(() => {

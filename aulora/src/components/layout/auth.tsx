@@ -36,15 +36,18 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         qc.clear();
         lastUid.current = user?.uid ?? null;
       }
-      if (user) {
-        try {
-          const created = await profileApi.ensure(user.displayName ?? user.email?.split('@')[0] ?? '');
-          if (created) qc.invalidateQueries();
-        } catch {
-          // sin conexión: se reintentará en el próximo inicio
-        }
-      }
+      // la app se muestra en cuanto se conoce la sesión; el perfil se comprueba en segundo plano
       setState({ user, loading: false, error: null });
+      if (user) {
+        profileApi
+          .ensure(user.displayName ?? user.email?.split('@')[0] ?? '')
+          .then((created) => {
+            if (created) void qc.invalidateQueries();
+          })
+          .catch(() => {
+            // sin conexión: se reintentará en el próximo inicio
+          });
+      }
     });
   }, [qc]);
 

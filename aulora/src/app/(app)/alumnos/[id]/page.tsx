@@ -1,6 +1,7 @@
 'use client';
 import { Suspense, useMemo, useState } from 'react';
 import Link from 'next/link';
+import { replaceUrl } from '@/lib/url';
 import { useParams, useRouter, useSearchParams } from 'next/navigation';
 import { Archive, ArchiveRestore, ArrowLeft, CalendarPlus, Copy, History, Mail, MoreHorizontal, Pencil, Phone, Plus, Trash2, UserX } from 'lucide-react';
 import { Badge, Button } from '@/components/ui/controls';
@@ -122,7 +123,7 @@ function StudentDetail({ student, tab }: { student: Student; tab: Tab }) {
 
       <Tabs
         value={tab}
-        hrefFor={(v) => `/alumnos/${student.id}${v === 'info' ? '' : `?tab=${v}`}`}
+        onChange={(v) => replaceUrl(`/alumnos/${student.id}${v === 'info' ? '' : `?tab=${v}`}`)}
         tabs={[
           { value: 'info', label: 'Información' },
           { value: 'agenda', label: 'Agenda', count: upcoming.length || undefined },

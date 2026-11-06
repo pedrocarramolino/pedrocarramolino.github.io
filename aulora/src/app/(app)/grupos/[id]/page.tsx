@@ -1,6 +1,7 @@
 'use client';
 import { Suspense, useMemo, useState } from 'react';
 import Link from 'next/link';
+import { replaceUrl } from '@/lib/url';
 import { useParams, useRouter, useSearchParams } from 'next/navigation';
 import { toast } from 'sonner';
 import { Archive, ArchiveRestore, ArrowLeft, CalendarPlus, ChevronDown, Clock, Copy, MapPin, MoreHorizontal, Pencil, Plus, Trash2, UserPlus, Users } from 'lucide-react';
@@ -138,7 +139,7 @@ function GroupDetail({ group, tab }: { group: Group; tab: Tab }) {
 
       <Tabs
         value={tab}
-        hrefFor={(v) => `/grupos/${group.id}${v === 'tareas' ? '' : `?tab=${v}`}`}
+        onChange={(v) => replaceUrl(`/grupos/${group.id}${v === 'tareas' ? '' : `?tab=${v}`}`)}
         tabs={[
           { value: 'tareas', label: 'Tareas' },
           { value: 'integrantes', label: 'Integrantes', count: memberIds.length },

@@ -1,7 +1,8 @@
 'use client';
 import { Suspense, useMemo, useState } from 'react';
 import Link from 'next/link';
-import { usePathname, useRouter, useSearchParams } from 'next/navigation';
+import { usePathname, useSearchParams } from 'next/navigation';
+import { replaceUrl } from '@/lib/url';
 import { CheckSquare, Copy, Filter, Inbox, MoreHorizontal, Plus, Search, Users, X } from 'lucide-react';
 import { Button, Input, Segmented, Select } from '@/components/ui/controls';
 import { Avatar, Card, EmptyState, ListSkeleton, PageHeader, ProgressBar } from '@/components/ui/display';
@@ -21,7 +22,6 @@ type Overview = 'all' | 'with' | 'pending' | 'none';
 
 function TasksPage() {
   const params = useSearchParams();
-  const router = useRouter();
   const pathname = usePathname();
   const ui = useUi();
   const lookup = useLookup();
@@ -40,7 +40,7 @@ function TasksPage() {
     const p = new URLSearchParams(params.toString());
     if (v) p.set(k, v);
     else p.delete(k);
-    router.replace(`${pathname}?${p.toString()}`, { scroll: false });
+    replaceUrl(`${pathname}?${p.toString()}`);
   };
 
   // filtros de contenido

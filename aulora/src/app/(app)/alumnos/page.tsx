@@ -2,6 +2,7 @@
 import { Suspense, useMemo, useState } from 'react';
 import Link from 'next/link';
 import { usePathname, useRouter, useSearchParams } from 'next/navigation';
+import { prefetchOnIntent, replaceUrl } from '@/lib/url';
 import { Archive, ArchiveRestore, Copy, MoreHorizontal, Pencil, Plus, Search, Trash2, Users } from 'lucide-react';
 import { Badge, Button, Input, Segmented } from '@/components/ui/controls';
 import { Avatar, Card, EmptyState, ListSkeleton, PageHeader } from '@/components/ui/display';
@@ -17,7 +18,6 @@ type Filter = StudentStatus | 'all';
 
 function StudentsPage() {
   const params = useSearchParams();
-  const router = useRouter();
   const pathname = usePathname();
   const ui = useUi();
   const lookup = useLookup();
@@ -65,7 +65,7 @@ function StudentsPage() {
             const p = new URLSearchParams(params.toString());
             if (v === 'active') p.delete('estado');
             else p.set('estado', v);
-            router.replace(`${pathname}?${p}`, { scroll: false });
+            replaceUrl(`${pathname}?${p}`);
           }}
           options={[
             { value: 'active', label: 'Activos' },
@@ -107,12 +107,13 @@ function StudentsPage() {
 }
 
 function StudentRow({ s, pending, actions }: { s: Student; pending: number; actions: ReturnType<typeof useStudentActions> }) {
+  const router = useRouter();
   const lookup = useLookup();
   const ui = useUi();
   const groups = lookup.groupsOf(s.id).map((g) => lookup.groupById.get(g)).filter(Boolean);
   return (
     <li className="group flex items-center gap-3 px-3 py-2.5 transition-colors hover:bg-surface-2/50 md:px-4">
-      <Link href={`/alumnos/${s.id}`} className="flex min-w-0 flex-1 items-center gap-3">
+      <Link href={`/alumnos/${s.id}`} {...prefetchOnIntent(router, `/alumnos/${s.id}`)} className="flex min-w-0 flex-1 items-center gap-3">
         <Avatar name={studentName(s)} photo={s.photo} color={s.color} size={38} />
         <div className="min-w-0 flex-1">
           <div className="flex items-center gap-2">

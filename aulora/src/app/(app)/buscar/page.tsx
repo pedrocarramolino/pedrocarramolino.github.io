@@ -1,15 +1,14 @@
 'use client';
 import { Suspense, useEffect, useMemo, useState } from 'react';
 import Link from 'next/link';
-import { usePathname, useRouter, useSearchParams } from 'next/navigation';
-import { useQuery } from '@tanstack/react-query';
+import { usePathname, useSearchParams } from 'next/navigation';
+import { replaceUrl } from '@/lib/url';
 import { CalendarDays, CheckSquare, FileText, Search, Users, X } from 'lucide-react';
 import { Button, Field, Input, Segmented, Select, Spinner } from '@/components/ui/controls';
 import { Avatar, Card, CardHeader, EmptyState, PageHeader } from '@/components/ui/display';
 import { TaskRow } from '@/components/tasks/parts';
 import { LessonList } from '@/components/lessons/LessonList';
-import { studentName, useLookup } from '@/hooks/data';
-import { lessonApi, noteApi, searchApi, taskApi } from '@/services/api';
+import { studentName, useAllLessons, useAllNotes, useAllTasks, useLookup } from '@/hooks/data';
 import { ASSIGNMENT_STATUS, NOTE_KIND } from '@/lib/labels';
 import { matches, serverTerm } from '@/lib/search';
 import { addDays, fmt, fromDateKey, toDateKey, weekKey, weekLabel } from '@/lib/dates';
@@ -20,7 +19,6 @@ type Kind = 'all' | 'students' | 'groups' | 'lessons' | 'tasks' | 'notes';
 
 function SearchPage() {
   const params = useSearchParams();
-  const router = useRouter();
   const pathname = usePathname();
   const lookup = useLookup();
   const [q, setQ] = useState(params.get('q') ?? '');
@@ -40,7 +38,7 @@ function SearchPage() {
       const p = new URLSearchParams(params.toString());
       if (q.trim()) p.set('q', q.trim());
       else p.delete('q');
-      router.replace(`${pathname}?${p}`, { scroll: false });
+      replaceUrl(`${pathname}?${p}`);
     }, 250);
     return () => clearTimeout(t);
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -52,24 +50,14 @@ function SearchPage() {
   // rango de fechas efectivo (semana o desde/hasta)
   const range = week ? { from: week, to: toDateKey(addDays(fromDateKey(week), 6)) } : { from, to };
 
-  const remote = useQuery({
-    queryKey: ['search', term, category, group, range.from, range.to],
-    enabled,
-    queryFn: async () => {
-      const fromWeek = range.from ? weekKey(fromDateKey(range.from)) : undefined;
-      const toWeek = range.to ? weekKey(fromDateKey(range.to)) : undefined;
-      const [tasks, lessons, notes] = await Promise.all([
-        taskApi.search({ q: term || undefined, categoryId: category || undefined, groupId: group || undefined, fromWeek, toWeek }),
-        term
-          ? searchApi.lessons(term)
-          : range.from || range.to
-            ? lessonApi.range(fromDateKey(range.from || '2000-01-01').toISOString(), addDays(fromDateKey(range.to || '2100-01-01'), 1).toISOString())
-            : Promise.resolve([]),
-        term ? noteApi.search(term) : noteApi.recent(),
-      ]);
-      return { tasks, lessons, notes };
-    },
-  });
+  // todo se filtra en el dispositivo: tareas y notas en vivo, clases leídas una vez
+  const allTasks = useAllTasks(enabled);
+  const allNotes = useAllNotes();
+  const allLessonsQ = useAllLessons(enabled);
+  const remote = {
+    isFetching: allTasks.isFetching || allLessonsQ.isFetching,
+    data: enabled ? { tasks: allTasks.data ?? [], lessons: allLessonsQ.data ?? [], notes: allNotes.data ?? [] } : undefined,
+  };
 
   const inRange = (d: string) => (!range.from || d >= range.from) && (!range.to || d <= range.to);
   const studentGroups = student ? lookup.groupsOf(student) : [];
@@ -81,6 +69,8 @@ function SearchPage() {
     const tasks = (remote.data?.tasks ?? []).filter(
       (t) =>
         (!query || matches(`${t.title} ${t.description} ${t.notes}`, query)) &&
+        (!category || t.category_id === category) &&
+        (!group || t.group_id === group) &&
         (!student || t.assignments.some((a) => a.student_id === student)) &&
         (!status || t.assignments.some((a) => a.status === status && (!student || a.student_id === student))) &&
         (inRange(t.week_start) || (!!t.due_on && inRange(t.due_on))),

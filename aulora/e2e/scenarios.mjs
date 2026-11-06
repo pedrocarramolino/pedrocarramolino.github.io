@@ -232,7 +232,7 @@ export async function run({ browser, base, shots, admin }) {
     await dlg.getByRole('button', { name: 'Crear 1 clase', exact: true }).click();
     await toast('Serie creada: 1 clase');
     await toast('1 sesión coincide con otra clase');
-    const lucia = (await docs('students')).find((x) => x.first_name === 'Lucía');
+    const lucia = (await docs('students')).find((x) => x.first_name === 'Lucía' && x.last_name === 'Martín');
     expect((await docs('lessons')).some((l) => l.student_id === lucia.id), 'la serie debería haberse guardado');
     await page.locator('[data-sonner-toast]').filter({ hasText: 'coincide' }).getByRole('button', { name: 'Deshacer serie' }).click();
     await toast('Serie deshecha');
@@ -507,6 +507,23 @@ export async function run({ browser, base, shots, admin }) {
     await p2.goto(`${base}/alumnos/${students['Hugo']}`);
     await p2.getByText('Alumno no encontrado').waitFor();
     await other.close();
+  });
+
+  await step('sincronización en vivo entre dispositivos (sin recargar)', async () => {
+    const { devices } = await import('node:module').then((m) => m.createRequire(import.meta.url)('playwright'));
+    const phone = await browser.newContext({ ...devices['iPhone 14'], timezoneId: 'Europe/Madrid', storageState: await ctx.storageState({ indexedDB: true }) });
+    const m = await phone.newPage();
+    await m.goto(base + '/alumnos');
+    await m.getByText('Hugo García').first().waitFor();
+    // en el ordenador: alumno nuevo y cambio de nombre
+    await page.goto(base + '/alumnos');
+    await quick('Alumno');
+    await page.getByLabel('Nombre *').fill('Sincro');
+    await page.getByRole('button', { name: 'Crear alumno' }).click();
+    await page.getByRole('heading', { name: 'Sincro' }).waitFor();
+    // en el iPhone aparece solo, sin recargar
+    await m.getByText('Sincro', { exact: true }).waitFor({ timeout: 10_000 });
+    await phone.close();
   });
 
   await step('móvil (iPhone): navegación inferior y vistas', async () => {

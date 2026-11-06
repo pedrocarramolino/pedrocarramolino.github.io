@@ -1,5 +1,7 @@
 'use client';
 import Link from 'next/link';
+import { useRouter } from 'next/navigation';
+import { prefetchOnIntent } from '@/lib/url';
 import { Ban, CheckCircle2, ChevronRight, Circle, Users } from 'lucide-react';
 import { cn } from '@/components/ui/cn';
 import { useLookup } from '@/hooks/data';
@@ -9,6 +11,7 @@ import type { Lesson } from '@/lib/types';
 /** Lista compacta de clases (agenda de un alumno o grupo). */
 export function LessonList({ lessons, showTarget = false, empty }: { lessons: Lesson[]; showTarget?: boolean; empty?: string }) {
   const lookup = useLookup();
+  const router = useRouter();
   if (!lessons.length) return <p className="px-4 py-3 text-sm text-muted">{empty ?? 'Sin clases.'}</p>;
   return (
     <ul className="divide-y divide-border">
@@ -16,7 +19,7 @@ export function LessonList({ lessons, showTarget = false, empty }: { lessons: Le
         const Icon = l.status === 'completed' ? CheckCircle2 : l.status === 'cancelled' ? Ban : Circle;
         return (
           <li key={l.id}>
-            <Link href={`/clases/${l.id}`} className="flex items-center gap-3 px-4 py-2.5 transition-colors hover:bg-surface-2/50">
+            <Link href={`/clases/${l.id}`} {...prefetchOnIntent(router, `/clases/${l.id}`)} className="flex items-center gap-3 px-4 py-2.5 transition-colors hover:bg-surface-2/50">
               <Icon className={cn('size-4 shrink-0', l.status === 'completed' ? 'text-success' : l.status === 'cancelled' ? 'text-danger' : 'text-muted')} />
               <div className="w-24 shrink-0 md:w-32">
                 <div className={cn('text-sm font-medium', l.status === 'cancelled' && 'line-through opacity-60')}>{capitalize(fmt(l.starts_at, 'EEE d MMM'))}</div>
