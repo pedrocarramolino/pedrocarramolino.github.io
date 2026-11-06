@@ -24,6 +24,7 @@ import {
   deleteDoc,
   doc,
   getDoc,
+  getDocFromCache,
   getDocs,
   limit as qLimit,
   orderBy,
@@ -140,7 +141,18 @@ class Batcher {
   async commit() {
     for (const b of this.batches) await b.commit();
   }
+  /**
+   * Guarda sin esperar la confirmación del servidor. Firestore aplica el cambio
+   * al instante en la caché local (persistente) y lo sincroniza en segundo
+   * plano; si el servidor lo rechaza se notifica mediante syncErrors.
+   */
+  commitInBackground() {
+    this.commit().catch((e) => syncErrors.dispatchEvent(new CustomEvent('error', { detail: humanize(e) })));
+  }
 }
+
+/** Errores de escrituras sincronizadas en segundo plano (los muestra la interfaz). */
+export const syncErrors = new EventTarget();
 
 const fullName = (s: Pick<Student, 'first_name' | 'last_name'>) => [s.first_name, s.last_name].filter(Boolean).join(' ');
 
@@ -263,19 +275,21 @@ export const studentApi = {
       const b = new Batcher();
       b.set(ref('students', id), data);
       b.log('students', 'created', fullName(data as Student), id);
-      await b.commit();
+      b.commitInBackground();
       return withId<Student>(id, data);
     }),
   update: (id: string, patch: Partial<StudentInput>) =>
     safe(async () => {
       const r = ref('students', id);
-      const cur = (await getDoc(r)).data();
+      // la caché local basta para conocer el estado actual: evita esperar al servidor
+      const snap = await getDocFromCache(r).catch(() => getDoc(r));
+      const cur = snap.data();
       if (!cur) throw new ApiError('El alumno ya no existe.', 'not-found');
       const next = { ...STUDENT_DEFAULTS, ...cur, ...clean(patch), updated_at: now() };
       const b = new Batcher();
       b.set(r, next);
       b.log('students', 'updated', fullName(next as Student), id);
-      await b.commit();
+      b.commitInBackground();
       return withId<Student>(id, next);
     }),
   /** Borra al alumno y, en cascada, sus clases, series, notas, objetivos y asignaciones. */

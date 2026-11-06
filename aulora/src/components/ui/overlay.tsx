@@ -6,16 +6,59 @@ import { Button } from './controls';
 import { cn } from './cn';
 
 let openCount = 0;
+let savedScrollY = 0;
+/**
+ * Bloquea el scroll de la página de fondo. En iOS no basta con overflow:hidden
+ * (la página sigue moviéndose al enfocar campos), así que se fija el <body>.
+ */
 function useScrollLock(active: boolean) {
   useEffect(() => {
     if (!active) return;
+    if (openCount === 0) {
+      savedScrollY = window.scrollY;
+      const b = document.body.style;
+      b.position = 'fixed';
+      b.top = `-${savedScrollY}px`;
+      b.left = '0';
+      b.right = '0';
+      b.width = '100%';
+      document.documentElement.style.overflow = 'hidden';
+    }
     openCount++;
-    document.documentElement.style.overflow = 'hidden';
     return () => {
       openCount--;
-      if (openCount === 0) document.documentElement.style.overflow = '';
+      if (openCount === 0) {
+        const b = document.body.style;
+        b.position = b.top = b.left = b.right = b.width = '';
+        document.documentElement.style.overflow = '';
+        window.scrollTo(0, savedScrollY);
+      }
     };
   }, [active]);
+}
+
+/**
+ * Zona realmente visible en móvil (descontando el teclado). Así la hoja
+ * inferior se queda encima del teclado en lugar de desplazar la página.
+ */
+function useVisibleViewport(active: boolean) {
+  const [box, setBox] = useState<{ top: number; height: number } | null>(null);
+  useEffect(() => {
+    const vv = window.visualViewport;
+    if (!active || !vv) return;
+    const mq = window.matchMedia('(max-width: 767px)');
+    const update = () => setBox(mq.matches ? { top: vv.offsetTop, height: vv.height } : null);
+    update();
+    vv.addEventListener('resize', update);
+    vv.addEventListener('scroll', update);
+    mq.addEventListener('change', update);
+    return () => {
+      vv.removeEventListener('resize', update);
+      vv.removeEventListener('scroll', update);
+      mq.removeEventListener('change', update);
+    };
+  }, [active]);
+  return box;
 }
 
 function useMounted() {
@@ -50,6 +93,7 @@ export function Dialog({
   const mounted = useMounted();
   const panel = useRef<HTMLDivElement>(null);
   useScrollLock(open);
+  const visible = useVisibleViewport(open);
 
   useEffect(() => {
     if (!open) return;
@@ -77,7 +121,11 @@ export function Dialog({
   const widths = { sm: 'md:max-w-sm', md: 'md:max-w-lg', lg: 'md:max-w-2xl', xl: 'md:max-w-4xl' };
 
   return createPortal(
-    <div className="fixed inset-0 z-50 flex items-end justify-center md:items-center md:p-6" role="presentation">
+    <div
+      className="fixed inset-0 z-50 flex items-end justify-center md:items-center md:p-6"
+      style={visible ? { top: visible.top, height: visible.height, bottom: 'auto' } : undefined}
+      role="presentation"
+    >
       <div className="animate-fade-in absolute inset-0 bg-black/30 backdrop-blur-[2px] dark:bg-black/50" onClick={onClose} />
       <div
         ref={panel}
@@ -85,7 +133,7 @@ export function Dialog({
         aria-modal="true"
         tabIndex={-1}
         className={cn(
-          'relative flex max-h-[92dvh] w-full flex-col bg-surface shadow-lg outline-none',
+          'relative flex max-h-[92%] w-full max-w-full min-w-0 flex-col bg-surface shadow-lg outline-none md:max-h-[92dvh]',
           'animate-sheet-in rounded-t-2xl md:animate-pop-in md:rounded-xl',
           side ? 'md:animate-slide-in-right md:fixed md:top-3 md:right-3 md:bottom-3 md:max-h-none md:w-[min(34rem,calc(100vw-1.5rem))] md:rounded-xl' : widths[size],
         )}
@@ -102,7 +150,7 @@ export function Dialog({
             </Button>
           </div>
         ) : null}
-        <div className="min-h-0 flex-1 overflow-y-auto overscroll-contain px-5 pb-5">{children}</div>
+        <div className="min-h-0 flex-1 overflow-x-hidden overflow-y-auto overscroll-contain px-5 pb-5">{children}</div>
         {footer ? (
           <div className="pb-safe flex shrink-0 items-center justify-end gap-2 border-t border-border px-5 py-3">{footer}</div>
         ) : null}

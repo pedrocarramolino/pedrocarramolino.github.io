@@ -1,5 +1,5 @@
 'use client';
-import { Suspense, useEffect, useState } from 'react';
+import { Suspense, useEffect, useRef, useState } from 'react';
 import { useSearchParams } from 'next/navigation';
 import { ArrowRight, MailCheck } from 'lucide-react';
 import { createUserWithEmailAndPassword, sendPasswordResetEmail, signInWithEmailAndPassword, updateProfile } from 'firebase/auth';
@@ -43,6 +43,14 @@ function LoginForm() {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [sent, setSent] = useState<string | null>(null);
+  // evita dos redirecciones a la vez (la del formulario y la de «ya hay sesión»)
+  const leaving = useRef(false);
+  const go = (url: string, replace = false) => {
+    if (leaving.current) return;
+    leaving.current = true;
+    if (replace) window.location.replace(url);
+    else window.location.assign(url);
+  };
 
   const switchMode = (m: Mode) => {
     setMode(m);
@@ -57,7 +65,7 @@ function LoginForm() {
 
   // con sesión ya iniciada, directamente a la app
   useEffect(() => {
-    if (!authLoading && user && !loading) window.location.replace(next);
+    if (!authLoading && user && !loading) go(next, true);
   }, [authLoading, user, next, loading]);
 
   const submit = async (e: React.FormEvent) => {
@@ -68,7 +76,7 @@ function LoginForm() {
       const auth = firebaseAuth();
       if (mode === 'signin') {
         await signInWithEmailAndPassword(auth, email.trim(), password);
-        window.location.assign(next);
+        go(next);
         return;
       }
       if (mode === 'signup') {
@@ -83,7 +91,7 @@ function LoginForm() {
         // el perfil puede haberse creado ya al detectar la sesión: fija el nombre elegido
         await profileApi.ensure(display);
         await profileApi.update(cred.user.uid, { display_name: display });
-        window.location.assign(next);
+        go(next);
         return;
       }
       if (mode === 'reset') {
@@ -93,7 +101,7 @@ function LoginForm() {
     } catch (err) {
       setError(translate(err));
     } finally {
-      setLoading(false);
+      if (!leaving.current) setLoading(false);
     }
   };
 

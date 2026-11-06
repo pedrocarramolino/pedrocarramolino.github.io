@@ -1,32 +1,49 @@
 'use client';
 import { useRef, useState } from 'react';
 import { useRouter } from 'next/navigation';
+import { useQueryClient } from '@tanstack/react-query';
 import { Camera, Trash2 } from 'lucide-react';
 import { Dialog } from '@/components/ui/overlay';
-import { Button, Field, Input, LabeledInput, Select, Textarea } from '@/components/ui/controls';
+import { Button, Field, Input, LabeledInput, NumberInput, Select, Textarea, rangeError } from '@/components/ui/controls';
 import { Avatar } from '@/components/ui/display';
 import { ColorPicker, GroupChips } from '@/components/ui/pickers';
-import { useAction, useLookup, useProfile } from '@/hooks/data';
+import { qk, useAction, useLookup, useProfile } from '@/hooks/data';
 import { studentApi, type StudentInput } from '@/services/api';
 import { LEVELS, STUDENT_STATUS } from '@/lib/labels';
 import { colorFor } from '@/lib/colors';
 import { toDateKey } from '@/lib/dates';
 import type { Student, StudentStatus } from '@/lib/types';
 
-/** Redimensiona una imagen a una miniatura cuadrada JPEG (data URL). */
+/**
+ * Redimensiona una foto a una miniatura cuadrada JPEG (data URL).
+ * Usa el decodificador nativo de <img>, rápido en iPhone y que respeta la
+ * orientación EXIF de la cámara.
+ */
 async function toThumbnail(file: File, size = 192): Promise<string> {
-  const bitmap = await createImageBitmap(file);
-  const side = Math.min(bitmap.width, bitmap.height);
-  const canvas = document.createElement('canvas');
-  canvas.width = size;
-  canvas.height = size;
-  const ctx = canvas.getContext('2d')!;
-  ctx.drawImage(bitmap, (bitmap.width - side) / 2, (bitmap.height - side) / 2, side, side, 0, 0, size, size);
-  return canvas.toDataURL('image/jpeg', 0.82);
+  const url = URL.createObjectURL(file);
+  try {
+    const img = new Image();
+    img.decoding = 'async';
+    img.src = url;
+    await img.decode();
+    const side = Math.min(img.naturalWidth, img.naturalHeight);
+    const canvas = document.createElement('canvas');
+    canvas.width = size;
+    canvas.height = size;
+    const ctx = canvas.getContext('2d')!;
+    ctx.imageSmoothingQuality = 'high';
+    ctx.drawImage(img, (img.naturalWidth - side) / 2, (img.naturalHeight - side) / 2, side, side, 0, 0, size, size);
+    return canvas.toDataURL('image/jpeg', 0.82);
+  } finally {
+    URL.revokeObjectURL(url);
+  }
 }
+
+const form0Minutes = (n: number) => (Number.isFinite(n) ? n : 60);
 
 export function StudentForm({ student, onClose }: { student?: Student; onClose: () => void }) {
   const router = useRouter();
+  const qc = useQueryClient();
   const { groups, groupsOf } = useLookup();
   const profile = useProfile();
   const editing = !!student;
@@ -47,19 +64,22 @@ export function StudentForm({ student, onClose }: { student?: Student; onClose: 
     color: student?.color ?? colorFor(String(Math.random())),
   }));
   const [groupIds, setGroupIds] = useState<string[]>(initialGroups);
+  const [minutes, setMinutes] = useState<number | null>(form0Minutes(student?.lesson_minutes ?? profile.data?.default_lesson_minutes ?? 60));
   const [error, setError] = useState<string>();
   const fileRef = useRef<HTMLInputElement>(null);
   const set = <K extends keyof Omit<StudentInput, 'group_ids'>>(k: K, v: StudentInput[K]) => setForm((f) => ({ ...f, [k]: v }));
 
   const save = useAction(
     async () => {
-      const clean = { ...form, first_name: form.first_name.trim(), last_name: form.last_name.trim(), email: form.email.trim(), joined_on: form.joined_on || null, group_ids: groupIds };
+      const clean = { ...form, first_name: form.first_name.trim(), last_name: form.last_name.trim(), email: form.email.trim(), joined_on: form.joined_on || null, lesson_minutes: minutes ?? 60, group_ids: groupIds };
       return editing ? await studentApi.update(student.id, clean) : await studentApi.create(clean);
     },
     {
       success: editing ? 'Alumno actualizado' : 'Alumno creado',
       invalidate: ['students', 'groups'],
       onDone: (s) => {
+        // muestra el alumno al instante, sin esperar a recargar la lista
+        qc.setQueryData<Student[]>(qk.students, (list) => (list ? [...list.filter((x) => x.id !== s.id), s] : list));
         onClose();
         if (!editing) router.push(`/alumnos/${s.id}`);
       },
@@ -70,6 +90,8 @@ export function StudentForm({ student, onClose }: { student?: Student; onClose: 
     e.preventDefault();
     if (!form.first_name.trim()) return setError('El nombre es obligatorio');
     if (form.email && !/^\S+@\S+\.\S+$/.test(form.email.trim())) return setError('El correo no parece válido');
+    const minutesProblem = rangeError(minutes, 5, 600, 'la duración de la clase (en minutos)');
+    if (minutesProblem) return setError(minutesProblem);
     setError(undefined);
     save.mutate(undefined);
   };
@@ -143,16 +165,9 @@ export function StudentForm({ student, onClose }: { student?: Student; onClose: 
           <LabeledInput label="Teléfono" type="tel" inputMode="tel" value={form.phone} onChange={(e) => set('phone', e.target.value)} />
           <LabeledInput label="Correo electrónico" type="email" inputMode="email" value={form.email} onChange={(e) => set('email', e.target.value)} />
           <LabeledInput label="Fecha de incorporación" type="date" value={form.joined_on ?? ''} onChange={(e) => set('joined_on', e.target.value)} />
-          <LabeledInput
-            label="Duración de la clase (min)"
-            type="number"
-            min={5}
-            max={600}
-            step={5}
-            inputMode="numeric"
-            value={form.lesson_minutes}
-            onChange={(e) => set('lesson_minutes', Number(e.target.value) || 0)}
-          />
+          <Field label="Duración de la clase (min)" hint="Entre 5 y 600 minutos">
+            <NumberInput value={minutes} onValueChange={setMinutes} maxLength={3} placeholder="45" />
+          </Field>
           <LabeledInput label="Horario habitual" value={form.usual_schedule} onChange={(e) => set('usual_schedule', e.target.value)} placeholder="Martes 17:30" />
           <Field label="Estado">
             <Select value={form.status} onChange={(e) => set('status', e.target.value as StudentStatus)}>

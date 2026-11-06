@@ -3,7 +3,7 @@ import { useMemo, useState } from 'react';
 import { AlertTriangle, Repeat } from 'lucide-react';
 import { addDays, differenceInCalendarDays } from 'date-fns';
 import { Dialog } from '@/components/ui/overlay';
-import { Button, Checkbox, Field, Input, LabeledInput, Segmented, Select, Textarea } from '@/components/ui/controls';
+import { Button, Checkbox, Field, LabeledInput, NumberInput, Segmented, Select, Textarea, rangeError } from '@/components/ui/controls';
 import { WeekdayPicker } from '@/components/ui/pickers';
 import { studentName, useAction, useLookup, useProfile } from '@/hooks/data';
 import { lessonApi, seriesApi, type LessonInput } from '@/services/api';
@@ -42,7 +42,8 @@ export function LessonForm({ draft, onClose }: { draft: LessonDraft; onClose: ()
     if (draft.studentId) return lookup.studentById.get(draft.studentId)?.lesson_minutes ?? 60;
     return profile.data?.default_lesson_minutes ?? 60;
   })();
-  const [minutes, setMinutes] = useState(defaultMinutes);
+  const [minutesInput, setMinutes] = useState<number | null>(defaultMinutes);
+  const minutes = minutesInput ?? 0;
   const [type, setType] = useState(existing?.lesson_type ?? (initialGroup ? 'Colectiva' : 'Individual'));
   const [location, setLocation] = useState(existing?.location ?? (initialGroup ? (lookup.groupById.get(initialGroup)?.location ?? '') : ''));
   const [plan, setPlan] = useState(existing?.plan ?? '');
@@ -196,7 +197,8 @@ export function LessonForm({ draft, onClose }: { draft: LessonDraft; onClose: ()
     if (kind === 'student' && !studentId) return setError('Elige un alumno');
     if (kind === 'group' && !groupId) return setError('Elige un grupo');
     if (!date || !time) return setError('Indica fecha y hora');
-    if (!minutes || minutes < 5) return setError('La duración mínima es de 5 minutos');
+    const minutesProblem = rangeError(minutesInput, 5, 600, 'la duración (en minutos)');
+    if (minutesProblem) return setError(minutesProblem);
     if (recurring && !weekdays.length) return setError('Elige al menos un día de la semana');
     if (recurring && endDate < date) return setError('La fecha de fin debe ser posterior al inicio');
     setError(undefined);
@@ -302,7 +304,7 @@ export function LessonForm({ draft, onClose }: { draft: LessonDraft; onClose: ()
           <LabeledInput label="Hora" type="time" step={300} value={time} onChange={(e) => setTime(e.target.value)} required />
           <Field label="Duración">
             <div className="flex items-center gap-1.5">
-              <Input type="number" min={5} max={600} step={5} inputMode="numeric" value={minutes} onChange={(e) => setMinutes(Number(e.target.value) || 0)} aria-label="Duración en minutos" />
+              <NumberInput value={minutesInput} onValueChange={setMinutes} maxLength={3} placeholder="45" aria-label="Duración en minutos" />
               <span className="text-sm text-muted">min</span>
             </div>
           </Field>

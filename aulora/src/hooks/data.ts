@@ -63,8 +63,9 @@ export function useAction<TArgs, TResult>(
   const invalidate = useInvalidate();
   return useMutation({
     mutationFn: fn,
-    onSuccess: async (r, a) => {
-      if (opts.invalidate) await invalidate(...opts.invalidate);
+    onSuccess: (r, a) => {
+      // las listas se refrescan en segundo plano: no hace falta esperarlas para cerrar
+      if (opts.invalidate) void invalidate(...opts.invalidate);
       const msg = typeof opts.success === 'function' ? opts.success(r, a) : opts.success;
       if (msg) toast.success(msg);
       opts.onDone?.(r, a);

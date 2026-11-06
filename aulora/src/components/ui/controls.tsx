@@ -215,3 +215,48 @@ export function Checkbox({
     </label>
   );
 }
+
+/** Normaliza lo tecleado en un campo numérico: solo dígitos y sin ceros a la izquierda. */
+export function cleanDigits(raw: string, maxLength = 4): string {
+  return raw
+    .replace(/\D/g, '')
+    .replace(/^0+(?=\d)/, '')
+    .slice(0, maxLength);
+}
+
+/**
+ * Campo numérico que se puede vaciar mientras se escribe (sin quedarse en «0»
+ * ni producir «045»). Devuelve null cuando está vacío; la validación del
+ * rango se hace al guardar.
+ */
+export const NumberInput = forwardRef<
+  HTMLInputElement,
+  Omit<React.InputHTMLAttributes<HTMLInputElement>, 'value' | 'onChange' | 'type'> & {
+    value: number | null;
+    onValueChange: (v: number | null) => void;
+    maxLength?: number;
+  }
+>(function NumberInput({ value, onValueChange, maxLength = 4, ...rest }, ref) {
+  return (
+    <Input
+      ref={ref}
+      type="text"
+      inputMode="numeric"
+      pattern="[0-9]*"
+      autoComplete="off"
+      value={value === null || Number.isNaN(value) ? '' : String(value)}
+      onChange={(e) => {
+        const t = cleanDigits(e.target.value, maxLength);
+        onValueChange(t === '' ? null : Number(t));
+      }}
+      {...rest}
+    />
+  );
+});
+
+/** Comprueba un valor numérico obligatorio dentro de un rango. Devuelve el error o null. */
+export function rangeError(v: number | null, min: number, max: number, what: string): string | null {
+  if (v === null || Number.isNaN(v)) return `Indica ${what}.`;
+  if (v < min || v > max) return `${what.charAt(0).toUpperCase() + what.slice(1)} debe estar entre ${min} y ${max}.`;
+  return null;
+}

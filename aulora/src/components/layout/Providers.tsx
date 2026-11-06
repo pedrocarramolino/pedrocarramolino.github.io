@@ -1,7 +1,8 @@
 'use client';
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
-import { Toaster } from 'sonner';
+import { Toaster, toast } from 'sonner';
+import { syncErrors } from '@/services/api';
 import { ConfirmProvider } from '@/components/ui/overlay';
 import { UiProvider } from './ui-store';
 import { useTheme } from './theme';
@@ -18,6 +19,15 @@ export function Providers({ children }: { children: React.ReactNode }) {
       }),
   );
   const { resolved } = useTheme();
+  // escrituras guardadas en segundo plano que el servidor rechazó
+  useEffect(() => {
+    const on = (e: Event) => {
+      toast.error(`No se pudo guardar en el servidor: ${(e as CustomEvent<Error>).detail.message}`);
+      void client.invalidateQueries();
+    };
+    syncErrors.addEventListener('error', on);
+    return () => syncErrors.removeEventListener('error', on);
+  }, [client]);
   return (
     <QueryClientProvider client={client}>
       <AuthProvider>

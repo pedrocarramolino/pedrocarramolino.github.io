@@ -103,13 +103,61 @@ export async function run({ browser, base, shots, admin }) {
       await page.getByLabel('Nombre *').fill(first);
       await page.getByLabel('Apellidos').fill(last);
       await page.getByLabel('Instrumento o especialidad').fill(inst);
+      if (first === 'Hugo') {
+        // borrar la duración y escribir 45: no debe quedar «0» ni «045»
+        const dur = page.getByLabel('Duración de la clase (min)');
+        await dur.fill('');
+        expect((await dur.inputValue()) === '', 'el campo vacío no debería mostrar 0');
+        await dur.pressSequentially('045');
+        expect((await dur.inputValue()) === '45', `duración mostrada: ${await dur.inputValue()}`);
+      }
       await page.getByRole('button', { name: 'Crear alumno' }).click();
       await page.waitForURL(/\/alumnos\/[A-Za-z0-9]{20}$/);
       await page.getByRole('heading', { name: `${first} ${last}` }).waitFor();
       students[first] = page.url().split('/').pop();
     }
-    const n = (await docs('students')).length;
-    expect(n === 3, `esperados 3 alumnos, hay ${n}`);
+    const all = await docs('students');
+    expect(all.length === 3, `esperados 3 alumnos, hay ${all.length}`);
+    const hugoMin = all.find((x) => x.first_name === 'Hugo')?.lesson_minutes;
+    expect(hugoMin === 45, `duración guardada de Hugo: ${hugoMin}`);
+  });
+
+  await step('foto del alumno: se reduce y se guarda rápido', async () => {
+    // foto grande, como la de la cámara de un iPhone (4032×3024)
+    const b64 = await page.evaluate(async () => {
+      const c = document.createElement('canvas');
+      c.width = 4032;
+      c.height = 3024;
+      const x = c.getContext('2d');
+      for (let i = 0; i < 300; i++) {
+        x.fillStyle = `hsl(${i}, 70%, 50%)`;
+        x.fillRect(Math.random() * 4032, Math.random() * 3024, 300, 300);
+      }
+      const blob = await new Promise((r) => c.toBlob(r, 'image/jpeg', 0.92));
+      const buf = new Uint8Array(await blob.arrayBuffer());
+      let out = '';
+      for (const v of buf) out += String.fromCharCode(v);
+      return btoa(out);
+    });
+    const { writeFileSync } = await import('node:fs');
+    const file = `${shots}/foto-grande.jpg`;
+    writeFileSync(file, Buffer.from(b64, 'base64'));
+    await page.goto(`${base}/alumnos/${students['Hugo']}`);
+    await page.getByRole('button', { name: 'Más acciones' }).click();
+    await page.getByRole('menuitem', { name: 'Editar ficha' }).click();
+    await page.locator('input[type=file]').setInputFiles(file);
+    await page.getByRole('dialog').locator('img').first().waitFor();
+    const t0 = Date.now();
+    await page.getByRole('button', { name: 'Guardar cambios' }).click();
+    await toast('Alumno actualizado');
+    const ms = Date.now() - t0;
+    expect(ms < 1500, `guardar con foto tardó ${ms} ms`);
+    let hugo;
+    for (let i = 0; i < 20 && !hugo?.photo; i++) {
+      hugo = (await docs('students')).find((x) => x.first_name === 'Hugo');
+      if (!hugo?.photo) await page.waitForTimeout(250);
+    }
+    expect(hugo?.photo?.startsWith('data:image/jpeg') && hugo.photo.length < 60000, `foto en el servidor: ${hugo?.photo?.length ?? 'sin foto'} caracteres`);
   });
 
   let groupId;
@@ -463,7 +511,22 @@ export async function run({ browser, base, shots, admin }) {
       const overflow = await m.evaluate(() => document.documentElement.scrollWidth - window.innerWidth);
       expect(overflow <= 1, `desbordamiento horizontal de ${overflow}px en ${u}`);
     }
+    // el formulario de alumno cabe en la pantalla, sin desplazamiento lateral
     await m.goto(base + '/');
+    await m.getByRole('button', { name: 'Crear' }).click();
+    await m.getByRole('menuitem', { name: 'Alumno' }).click();
+    await m.getByRole('dialog').waitFor();
+    await m.waitForTimeout(400);
+    const fit = await m.evaluate(() => {
+      const panel = document.querySelector('[role=dialog]');
+      const body = panel.querySelector('.overflow-y-auto');
+      return { vw: window.innerWidth, panel: panel.getBoundingClientRect().width, scroll: body.scrollWidth, client: body.clientWidth, bodyPos: getComputedStyle(document.body).position };
+    });
+    expect(fit.panel <= fit.vw && fit.scroll <= fit.client, `formulario desbordado: ${JSON.stringify(fit)}`);
+    expect(fit.bodyPos === 'fixed', 'el fondo debería quedar bloqueado mientras el formulario está abierto');
+    await m.screenshot({ path: `${shots}/movil-nuevo-alumno.png` });
+    await m.getByRole('button', { name: 'Cancelar' }).click();
+    expect((await m.evaluate(() => getComputedStyle(document.body).position)) !== 'fixed', 'el fondo debería desbloquearse al cerrar');
     await m.getByRole('button', { name: 'Crear' }).click();
     await m.getByRole('menuitem', { name: 'Tarea' }).click();
     await m.getByRole('dialog').waitFor();
