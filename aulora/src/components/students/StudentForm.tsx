@@ -7,7 +7,7 @@ import { Button, Field, Input, LabeledInput, Select, Textarea } from '@/componen
 import { Avatar } from '@/components/ui/display';
 import { ColorPicker, GroupChips } from '@/components/ui/pickers';
 import { useAction, useLookup, useProfile } from '@/hooks/data';
-import { groupApi, studentApi, type StudentInput } from '@/services/api';
+import { studentApi, type StudentInput } from '@/services/api';
 import { LEVELS, STUDENT_STATUS } from '@/lib/labels';
 import { colorFor } from '@/lib/colors';
 import { toDateKey } from '@/lib/dates';
@@ -31,7 +31,7 @@ export function StudentForm({ student, onClose }: { student?: Student; onClose: 
   const profile = useProfile();
   const editing = !!student;
   const initialGroups = student ? groupsOf(student.id) : [];
-  const [form, setForm] = useState<StudentInput>(() => ({
+  const [form, setForm] = useState<Omit<StudentInput, 'group_ids'>>(() => ({
     first_name: student?.first_name ?? '',
     last_name: student?.last_name ?? '',
     photo: student?.photo ?? null,
@@ -49,14 +49,12 @@ export function StudentForm({ student, onClose }: { student?: Student; onClose: 
   const [groupIds, setGroupIds] = useState<string[]>(initialGroups);
   const [error, setError] = useState<string>();
   const fileRef = useRef<HTMLInputElement>(null);
-  const set = <K extends keyof StudentInput>(k: K, v: StudentInput[K]) => setForm((f) => ({ ...f, [k]: v }));
+  const set = <K extends keyof Omit<StudentInput, 'group_ids'>>(k: K, v: StudentInput[K]) => setForm((f) => ({ ...f, [k]: v }));
 
   const save = useAction(
     async () => {
-      const clean = { ...form, first_name: form.first_name.trim(), last_name: form.last_name.trim(), email: form.email.trim(), joined_on: form.joined_on || null };
-      const saved = editing ? await studentApi.update(student.id, clean) : await studentApi.create(clean);
-      await groupApi.setStudentGroups(saved.id, groupIds, initialGroups);
-      return saved;
+      const clean = { ...form, first_name: form.first_name.trim(), last_name: form.last_name.trim(), email: form.email.trim(), joined_on: form.joined_on || null, group_ids: groupIds };
+      return editing ? await studentApi.update(student.id, clean) : await studentApi.create(clean);
     },
     {
       success: editing ? 'Alumno actualizado' : 'Alumno creado',

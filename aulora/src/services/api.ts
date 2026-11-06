@@ -1,10 +1,43 @@
 /**
- * Capa de acceso a datos. Todas las operaciones pasan por aquí y usan el
- * cliente de Supabase del navegador; la RLS garantiza que cada profesor solo
- * accede a sus filas. Las funciones lanzan errores legibles en español.
+ * Capa de acceso a datos sobre Cloud Firestore.
+ *
+ * Estructura (todo bajo el profesor autenticado):
+ *   users/{uid}                      perfil
+ *   users/{uid}/categories/{id}      categorías de tareas
+ *   users/{uid}/students/{id}        alumnos (group_ids: pertenencia a grupos)
+ *   users/{uid}/groups/{id}          grupos
+ *   users/{uid}/series/{id}          horarios recurrentes
+ *   users/{uid}/lessons/{id}         cada sesión real
+ *   users/{uid}/tasks/{id}           tareas con sus asignaciones por alumno
+ *   users/{uid}/notes/{id}           anotaciones de seguimiento
+ *   users/{uid}/goals/{id}           objetivos
+ *   users/{uid}/activity/{id}        registro de actividad
+ *
+ * Las reglas de seguridad (firestore.rules) impiden acceder a datos de otro
+ * profesor. Las operaciones que tocan varios documentos usan lotes o
+ * transacciones para que sean atómicas.
  */
-import type { PostgrestError } from '@supabase/supabase-js';
-import { supabase } from '@/lib/supabase/client';
+import {
+  arrayRemove,
+  arrayUnion,
+  collection,
+  deleteDoc,
+  doc,
+  getDoc,
+  getDocs,
+  limit as qLimit,
+  orderBy,
+  query,
+  runTransaction,
+  where,
+  writeBatch,
+  type DocumentData,
+  type Query,
+  type QueryConstraint,
+  type WriteBatch,
+} from 'firebase/firestore';
+import { firebaseAuth, firestore } from '@/lib/firebase';
+import { norm } from '@/lib/search';
 import type {
   ActivityEntry,
   Assignment,
@@ -28,259 +61,840 @@ export class ApiError extends Error {
   }
 }
 
-function humanize(e: PostgrestError | { message: string; code?: string }): ApiError {
-  const code = 'code' in e ? e.code : undefined;
-  const msg = e.message ?? '';
-  if (code === '23505') return new ApiError('Ya existe un elemento con esos datos.', code);
-  if (code === '23503') return new ApiError('El elemento relacionado ya no existe. Recarga la página.', code);
-  if (code === '23514') return new ApiError('Algún dato no es válido. Revisa el formulario.', code);
-  if (code === '42501' || /row-level security/i.test(msg)) return new ApiError('No tienes permiso para esta acción. Vuelve a iniciar sesión.', code);
-  if (code === 'PGRST301' || /JWT/i.test(msg)) return new ApiError('Tu sesión ha caducado. Vuelve a iniciar sesión.', code);
-  if (/fetch|network|Failed to fetch/i.test(msg)) return new ApiError('Sin conexión con el servidor. Comprueba tu conexión a internet.', code);
-  return new ApiError(msg || 'Ha ocurrido un error inesperado.', code);
+/** Traduce errores de Firebase a mensajes comprensibles. */
+export function humanize(e: unknown): ApiError {
+  if (e instanceof ApiError) return e;
+  const err = e as { code?: string; message?: string };
+  const code = err?.code ?? '';
+  if (code === 'permission-denied') return new ApiError('No tienes permiso para esta acción o algún dato no es válido. Vuelve a iniciar sesión si persiste.', code);
+  if (code === 'unauthenticated') return new ApiError('Tu sesión ha caducado. Vuelve a iniciar sesión.', code);
+  if (code === 'unavailable' || code === 'deadline-exceeded') return new ApiError('Sin conexión con el servidor. Comprueba tu conexión a internet.', code);
+  if (code === 'not-found') return new ApiError('El elemento ya no existe. Recarga la página.', code);
+  if (code === 'resource-exhausted') return new ApiError('Se ha superado la cuota de Firebase. Inténtalo más tarde.', code);
+  return new ApiError(err?.message || 'Ha ocurrido un error inesperado.', code);
 }
 
-async function run<T>(p: PromiseLike<{ data: T | null; error: PostgrestError | null }>): Promise<T> {
-  const { data, error } = await p;
-  if (error) throw humanize(error);
-  return data as T;
+async function safe<T>(fn: () => Promise<T>): Promise<T> {
+  try {
+    return await fn();
+  } catch (e) {
+    throw humanize(e);
+  }
 }
 
-const sb = () => supabase();
-const CHUNK = 150;
-function chunks<T>(arr: T[], size = CHUNK): T[][] {
-  const out: T[][] = [];
-  for (let i = 0; i < arr.length; i += size) out.push(arr.slice(i, i + size));
-  return out;
+// ------------------------------------------------------------------ utilidades
+function uid(): string {
+  const u = firebaseAuth().currentUser;
+  if (!u) throw new ApiError('Tu sesión ha caducado. Vuelve a iniciar sesión.', 'unauthenticated');
+  return u.uid;
 }
+const db = () => firestore();
+type Coll = 'categories' | 'students' | 'groups' | 'series' | 'lessons' | 'tasks' | 'notes' | 'goals' | 'activity';
+const col = (c: Coll) => collection(db(), 'users', uid(), c);
+const ref = (c: Coll, id: string) => doc(db(), 'users', uid(), c, id);
+const newId = (c: Coll) => doc(col(c)).id;
+const now = () => new Date().toISOString();
+
+function withId<T>(id: string, data: DocumentData): T {
+  return { ...data, id, owner_id: uid() } as T;
+}
+async function list<T>(q: Query<DocumentData>): Promise<T[]> {
+  const snap = await getDocs(q);
+  return snap.docs.map((d) => withId<T>(d.id, d.data()));
+}
+const all = <T>(c: Coll, ...cs: QueryConstraint[]) => list<T>(query(col(c), ...cs));
+
+/** Elimina campos que no se guardan (id, owner_id) antes de escribir. */
+function clean<T extends object>(o: T): DocumentData {
+  const { id: _id, owner_id: _o, ...rest } = o as Record<string, unknown>;
+  void _id;
+  void _o;
+  return rest;
+}
+
+/** Lotes de escritura troceados (Firestore admite 500 operaciones por lote). */
+class Batcher {
+  private batches: WriteBatch[] = [];
+  private count = 0;
+  private get current() {
+    if (!this.batches.length || this.count >= 450) {
+      this.batches.push(writeBatch(db()));
+      this.count = 0;
+    }
+    this.count++;
+    return this.batches[this.batches.length - 1];
+  }
+  set(r: ReturnType<typeof doc>, data: DocumentData, merge = false) {
+    if (merge) this.current.set(r, data, { merge: true });
+    else this.current.set(r, data);
+  }
+  update(r: ReturnType<typeof doc>, data: DocumentData) {
+    this.current.update(r, data);
+  }
+  delete(r: ReturnType<typeof doc>) {
+    this.current.delete(r);
+  }
+  log(entity: string, action: ActivityEntry['action'], label: string, entityId: string | null) {
+    this.current.set(doc(col('activity')), { entity, entity_id: entityId, action, label: label.slice(0, 200), created_at: now() });
+  }
+  async commit() {
+    for (const b of this.batches) await b.commit();
+  }
+}
+
+const fullName = (s: Pick<Student, 'first_name' | 'last_name'>) => [s.first_name, s.last_name].filter(Boolean).join(' ');
 
 // ------------------------------------------------------------------ Perfil
+const DEFAULT_CATEGORIES: [string, string][] = [
+  ['Técnica', 'indigo'],
+  ['Estudios', 'sky'],
+  ['Repertorio', 'violet'],
+  ['Lectura', 'amber'],
+  ['Teoría musical', 'teal'],
+  ['Ejercicios', 'rose'],
+  ['Otros', 'slate'],
+];
+
 export const profileApi = {
-  get: async (): Promise<Profile | null> => {
-    const rows = await run<Profile[]>(sb().from('profiles').select('*').limit(1));
-    return rows[0] ?? null;
-  },
-  update: (id: string, patch: Partial<Profile>) => run<Profile>(sb().from('profiles').update(patch).eq('id', id).select().single()),
+  get: () =>
+    safe(async () => {
+      const snap = await getDoc(doc(db(), 'users', uid()));
+      return snap.exists() ? ({ ...(snap.data() as Profile), id: snap.id } as Profile) : null;
+    }),
+  /** Crea el perfil y las categorías iniciales la primera vez que entra el profesor. */
+  ensure: (displayName: string) =>
+    safe(async () => {
+      const id = uid();
+      const pref = doc(db(), 'users', id);
+      const created = await runTransaction(db(), async (tx) => {
+        const snap = await tx.get(pref);
+        if (snap.exists()) return false;
+        tx.set(pref, { display_name: displayName, default_lesson_minutes: 60, day_start_hour: 8, day_end_hour: 22, created_at: now() });
+        return true;
+      });
+      if (created) {
+        const b = new Batcher();
+        DEFAULT_CATEGORIES.forEach(([name, color], i) => b.set(doc(col('categories')), { name, color, sort_order: i + 1, created_at: now() }));
+        await b.commit();
+      }
+      return created;
+    }),
+  update: (id: string, patch: Partial<Profile>) =>
+    safe(async () => {
+      const r = doc(db(), 'users', id);
+      const cur = (await getDoc(r)).data() ?? {};
+      const next = { ...cur, ...clean(patch) };
+      const b = writeBatch(db());
+      b.set(r, next);
+      await b.commit();
+      return { ...(next as Profile), id };
+    }),
 };
 
 // ------------------------------------------------------------------ Categorías
 export const categoryApi = {
-  list: () => run<Category[]>(sb().from('task_categories').select('*').order('sort_order').order('name')),
-  create: (c: Pick<Category, 'name' | 'color' | 'sort_order'>) => run<Category>(sb().from('task_categories').insert(c).select().single()),
-  update: (id: string, patch: Partial<Category>) => run<Category>(sb().from('task_categories').update(patch).eq('id', id).select().single()),
-  remove: (id: string) => run(sb().from('task_categories').delete().eq('id', id)),
+  list: () => safe(async () => (await all<Category>('categories')).sort((a, b) => a.sort_order - b.sort_order || a.name.localeCompare(b.name))),
+  create: (c: Pick<Category, 'name' | 'color' | 'sort_order'>) =>
+    safe(async () => {
+      const existing = await all<Category>('categories');
+      if (existing.some((x) => norm(x.name) === norm(c.name))) throw new ApiError('Ya existe una categoría con ese nombre.');
+      const id = newId('categories');
+      const b = writeBatch(db());
+      const data = { ...c, created_at: now() };
+      b.set(ref('categories', id), data);
+      await b.commit();
+      return withId<Category>(id, data);
+    }),
+  update: (id: string, patch: Partial<Category>) =>
+    safe(async () => {
+      const r = ref('categories', id);
+      const cur = (await getDoc(r)).data();
+      if (!cur) throw new ApiError('La categoría ya no existe.');
+      const next = { ...cur, ...clean(patch) };
+      const b = writeBatch(db());
+      b.set(r, next);
+      await b.commit();
+      return withId<Category>(id, next);
+    }),
+  /** Borra la categoría; las tareas, objetivos y notas que la usaban quedan sin categoría. */
+  remove: (id: string) =>
+    safe(async () => {
+      const b = new Batcher();
+      for (const c of ['tasks', 'goals', 'notes'] as const) {
+        const snap = await getDocs(query(col(c), where('category_id', '==', id)));
+        snap.docs.forEach((d) => b.update(d.ref, { category_id: null }));
+      }
+      b.delete(ref('categories', id));
+      await b.commit();
+    }),
 };
 
 // ------------------------------------------------------------------ Alumnos
-export type StudentInput = Omit<Student, 'id' | 'owner_id' | 'created_at' | 'updated_at'>;
+export type StudentInput = Omit<Student, 'id' | 'owner_id' | 'created_at' | 'updated_at' | 'group_ids'> & { group_ids?: string[] };
+
+const STUDENT_DEFAULTS = {
+  last_name: '',
+  photo: null,
+  instrument: '',
+  phone: '',
+  email: '',
+  joined_on: null,
+  usual_schedule: '',
+  lesson_minutes: 60,
+  level: '',
+  notes: '',
+  status: 'active',
+  color: 'indigo',
+  group_ids: [] as string[],
+};
+
 export const studentApi = {
-  list: () => run<Student[]>(sb().from('students').select('*').order('first_name').order('last_name')),
-  get: (id: string) => run<Student>(sb().from('students').select('*').eq('id', id).single()),
-  create: (s: Partial<StudentInput>) => run<Student>(sb().from('students').insert(s).select().single()),
-  update: (id: string, patch: Partial<StudentInput>) => run<Student>(sb().from('students').update(patch).eq('id', id).select().single()),
-  remove: (id: string) => run(sb().from('students').delete().eq('id', id)),
-  duplicate: (id: string) => run<string>(sb().rpc('duplicate_student', { p_student_id: id })),
+  list: () => safe(async () => (await all<Student>('students')).map((s) => ({ ...s, group_ids: s.group_ids ?? [] })).sort((a, b) => fullName(a).localeCompare(fullName(b), 'es'))),
+  get: (id: string) =>
+    safe(async () => {
+      const snap = await getDoc(ref('students', id));
+      if (!snap.exists()) throw new ApiError('Alumno no encontrado', 'not-found');
+      return withId<Student>(id, snap.data());
+    }),
+  create: (s: Partial<StudentInput>) =>
+    safe(async () => {
+      const id = newId('students');
+      const data = { ...STUDENT_DEFAULTS, ...s, created_at: now(), updated_at: now() };
+      const b = new Batcher();
+      b.set(ref('students', id), data);
+      b.log('students', 'created', fullName(data as Student), id);
+      await b.commit();
+      return withId<Student>(id, data);
+    }),
+  update: (id: string, patch: Partial<StudentInput>) =>
+    safe(async () => {
+      const r = ref('students', id);
+      const cur = (await getDoc(r)).data();
+      if (!cur) throw new ApiError('El alumno ya no existe.', 'not-found');
+      const next = { ...STUDENT_DEFAULTS, ...cur, ...clean(patch), updated_at: now() };
+      const b = new Batcher();
+      b.set(r, next);
+      b.log('students', 'updated', fullName(next as Student), id);
+      await b.commit();
+      return withId<Student>(id, next);
+    }),
+  /** Borra al alumno y, en cascada, sus clases, series, notas, objetivos y asignaciones. */
+  remove: (id: string) =>
+    safe(async () => {
+      const cur = (await getDoc(ref('students', id))).data();
+      const b = new Batcher();
+      for (const c of ['lessons', 'series', 'notes', 'goals'] as const) {
+        (await getDocs(query(col(c), where('student_id', '==', id)))).docs.forEach((d) => b.delete(d.ref));
+      }
+      const tasks = await getDocs(query(col('tasks'), where('student_ids', 'array-contains', id)));
+      for (const d of tasks.docs) {
+        const t = d.data() as Task & { assignments: Record<string, unknown>; student_ids: string[] };
+        if (!t.group_id && t.student_ids.length <= 1) b.delete(d.ref);
+        else {
+          const assignments = { ...t.assignments };
+          delete assignments[id];
+          b.update(d.ref, derive({ assignments }));
+        }
+      }
+      b.delete(ref('students', id));
+      b.log('students', 'deleted', cur ? fullName(cur as Student) : '', id);
+      await b.commit();
+    }),
+  duplicate: (id: string) =>
+    safe(async () => {
+      const cur = (await getDoc(ref('students', id))).data() as Student | undefined;
+      if (!cur) throw new ApiError('Alumno no encontrado', 'not-found');
+      const copy = await studentApi.create({
+        ...clean(cur),
+        last_name: `${cur.last_name} (copia)`.trim(),
+        joined_on: new Date().toISOString().slice(0, 10),
+        status: 'active',
+        group_ids: cur.group_ids ?? [],
+      } as Partial<StudentInput>);
+      return copy.id;
+    }),
 };
 
 // ------------------------------------------------------------------ Grupos
 export type GroupInput = Omit<Group, 'id' | 'owner_id' | 'created_at' | 'updated_at'>;
+const GROUP_DEFAULTS = { description: '', subject: '', usual_weekday: null, usual_time: null, lesson_minutes: 60, location: '', notes: '', color: 'teal', archived: false };
+
 export const groupApi = {
-  list: () => run<Group[]>(sb().from('groups').select('*').order('name')),
-  create: (g: Partial<GroupInput>) => run<Group>(sb().from('groups').insert(g).select().single()),
-  update: (id: string, patch: Partial<GroupInput>) => run<Group>(sb().from('groups').update(patch).eq('id', id).select().single()),
-  remove: (id: string) => run(sb().from('groups').delete().eq('id', id)),
-  members: () => run<GroupMember[]>(sb().from('group_members').select('group_id,student_id,owner_id')),
-  setMembers: async (groupId: string, studentIds: string[], current: string[]) => {
-    const add = studentIds.filter((id) => !current.includes(id));
-    const del = current.filter((id) => !studentIds.includes(id));
-    if (add.length) await run(sb().from('group_members').insert(add.map((student_id) => ({ group_id: groupId, student_id }))));
-    if (del.length) await run(sb().from('group_members').delete().eq('group_id', groupId).in('student_id', del));
-  },
-  setStudentGroups: async (studentId: string, groupIds: string[], current: string[]) => {
-    const add = groupIds.filter((id) => !current.includes(id));
-    const del = current.filter((id) => !groupIds.includes(id));
-    if (add.length) await run(sb().from('group_members').insert(add.map((group_id) => ({ group_id, student_id: studentId }))));
-    if (del.length) await run(sb().from('group_members').delete().eq('student_id', studentId).in('group_id', del));
-  },
+  list: () => safe(async () => (await all<Group>('groups')).sort((a, b) => a.name.localeCompare(b.name, 'es'))),
+  create: (g: Partial<GroupInput>) =>
+    safe(async () => {
+      const id = newId('groups');
+      const data = { ...GROUP_DEFAULTS, ...g, created_at: now(), updated_at: now() };
+      const b = new Batcher();
+      b.set(ref('groups', id), data);
+      b.log('groups', 'created', String(data.name), id);
+      await b.commit();
+      return withId<Group>(id, data);
+    }),
+  update: (id: string, patch: Partial<GroupInput>) =>
+    safe(async () => {
+      const r = ref('groups', id);
+      const cur = (await getDoc(r)).data();
+      if (!cur) throw new ApiError('El grupo ya no existe.', 'not-found');
+      const next: DocumentData = { ...GROUP_DEFAULTS, ...cur, ...clean(patch), updated_at: now() };
+      const b = new Batcher();
+      b.set(r, next);
+      b.log('groups', 'updated', String(next.name), id);
+      await b.commit();
+      return withId<Group>(id, next);
+    }),
+  /** Borra el grupo, sus clases y sus tareas; los alumnos se conservan. */
+  remove: (id: string) =>
+    safe(async () => {
+      const cur = (await getDoc(ref('groups', id))).data();
+      const b = new Batcher();
+      for (const c of ['lessons', 'series', 'tasks'] as const) {
+        (await getDocs(query(col(c), where('group_id', '==', id)))).docs.forEach((d) => b.delete(d.ref));
+      }
+      (await getDocs(query(col('students'), where('group_ids', 'array-contains', id)))).docs.forEach((d) => b.update(d.ref, { group_ids: arrayRemove(id) }));
+      b.delete(ref('groups', id));
+      b.log('groups', 'deleted', String(cur?.name ?? ''), id);
+      await b.commit();
+    }),
+  /** Pertenencias derivadas de los alumnos. */
+  members: () =>
+    safe(async () => (await studentApi.list()).flatMap((s) => s.group_ids.map<GroupMember>((g) => ({ group_id: g, student_id: s.id, owner_id: s.owner_id })))),
+  setMembers: (groupId: string, studentIds: string[], current: string[]) =>
+    safe(async () => {
+      const b = new Batcher();
+      studentIds.filter((id) => !current.includes(id)).forEach((id) => b.update(ref('students', id), { group_ids: arrayUnion(groupId) }));
+      current.filter((id) => !studentIds.includes(id)).forEach((id) => b.update(ref('students', id), { group_ids: arrayRemove(groupId) }));
+      await b.commit();
+    }),
+  setStudentGroups: (studentId: string, groupIds: string[]) =>
+    safe(async () => {
+      const b = new Batcher();
+      b.update(ref('students', studentId), { group_ids: [...new Set(groupIds)] });
+      await b.commit();
+    }),
 };
 
 // ------------------------------------------------------------------ Clases
 export type LessonInput = Partial<Omit<Lesson, 'id' | 'owner_id' | 'ends_at' | 'created_at' | 'updated_at'>>;
+const LESSON_DEFAULTS = {
+  series_id: null,
+  student_id: null,
+  group_id: null,
+  lesson_type: 'Individual',
+  status: 'scheduled',
+  location: '',
+  plan: '',
+  notes: '',
+  summary: '',
+  next_goals: '',
+  is_modified: false,
+  original_starts_at: null,
+  completed_at: null,
+};
+
+/** Normaliza una clase: fin calculado y fecha de finalización según el estado. */
+function lessonData(base: DocumentData): DocumentData {
+  const d: DocumentData = { ...LESSON_DEFAULTS, ...base };
+  d.starts_at = new Date(d.starts_at).toISOString();
+  d.ends_at = new Date(new Date(d.starts_at).getTime() + Number(d.duration_minutes) * 60_000).toISOString();
+  if (d.status === 'completed' && !d.completed_at) d.completed_at = now();
+  if (d.status !== 'completed') d.completed_at = null;
+  return d;
+}
+const lessonLabel = (l: DocumentData) =>
+  new Date(l.starts_at).toLocaleString('es-ES', { day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit', timeZone: 'Europe/Madrid' });
+const STATUS_WORD: Record<string, string> = { completed: 'realizada', cancelled: 'cancelada', scheduled: 'programada' };
+
 export const lessonApi = {
   range: (fromIso: string, toIso: string) =>
-    run<Lesson[]>(sb().from('lessons').select('*').gte('starts_at', fromIso).lt('starts_at', toIso).order('starts_at')),
-  get: (id: string) => run<Lesson>(sb().from('lessons').select('*').eq('id', id).single()),
-  forTarget: (studentId: string | null, groupIds: string[]) => {
-    const conds = [studentId ? `student_id.eq.${studentId}` : null, groupIds.length ? `group_id.in.(${groupIds.join(',')})` : null].filter(Boolean);
-    if (!conds.length) return Promise.resolve([] as Lesson[]);
-    return run<Lesson[]>(sb().from('lessons').select('*').or(conds.join(',')).order('starts_at', { ascending: false }).limit(500));
-  },
-  create: (l: LessonInput) => run<Lesson>(sb().from('lessons').insert(l).select().single()),
-  createMany: async (rows: LessonInput[]) => {
-    const out: Lesson[] = [];
-    for (const part of chunks(rows)) out.push(...(await run<Lesson[]>(sb().from('lessons').insert(part).select())));
-    return out;
-  },
-  update: (id: string, patch: LessonInput) => run<Lesson>(sb().from('lessons').update(patch).eq('id', id).select().single()),
-  remove: (id: string) => run(sb().from('lessons').delete().eq('id', id)),
+    safe(() => all<Lesson>('lessons', where('starts_at', '>=', new Date(fromIso).toISOString()), where('starts_at', '<', new Date(toIso).toISOString()), orderBy('starts_at'))),
+  get: (id: string) =>
+    safe(async () => {
+      const snap = await getDoc(ref('lessons', id));
+      if (!snap.exists()) throw new ApiError('Clase no encontrada', 'not-found');
+      return withId<Lesson>(id, snap.data());
+    }),
+  forTarget: (studentId: string | null, groupIds: string[]) =>
+    safe(async () => {
+      const out: Lesson[] = [];
+      if (studentId) out.push(...(await all<Lesson>('lessons', where('student_id', '==', studentId))));
+      for (let i = 0; i < groupIds.length; i += 30) out.push(...(await all<Lesson>('lessons', where('group_id', 'in', groupIds.slice(i, i + 30)))));
+      return out.sort((a, b) => b.starts_at.localeCompare(a.starts_at)).slice(0, 500);
+    }),
+  create: (l: LessonInput) =>
+    safe(async () => {
+      const id = newId('lessons');
+      const data = lessonData({ ...l, created_at: now(), updated_at: now() });
+      const b = new Batcher();
+      b.set(ref('lessons', id), data);
+      b.log('lessons', 'created', lessonLabel(data), id);
+      await b.commit();
+      return withId<Lesson>(id, data);
+    }),
+  /** Crea muchas sesiones a la vez (series): solo se registra la serie en la actividad. */
+  createMany: (rows: LessonInput[]) =>
+    safe(async () => {
+      const b = new Batcher();
+      const out: Lesson[] = [];
+      for (const r of rows) {
+        const id = newId('lessons');
+        const data = lessonData({ ...r, created_at: now(), updated_at: now() });
+        b.set(ref('lessons', id), data);
+        out.push(withId<Lesson>(id, data));
+      }
+      await b.commit();
+      return out;
+    }),
+  update: (id: string, patch: LessonInput) =>
+    safe(async () => {
+      const r = ref('lessons', id);
+      const cur = (await getDoc(r)).data();
+      if (!cur) throw new ApiError('La clase ya no existe.', 'not-found');
+      const next = lessonData({ ...cur, ...clean(patch), updated_at: now() });
+      const b = new Batcher();
+      b.set(r, next);
+      const label = lessonLabel(next) + (cur.status !== next.status ? ` · ${STATUS_WORD[next.status]}` : '');
+      b.log('lessons', 'updated', label, id);
+      await b.commit();
+      return withId<Lesson>(id, next);
+    }),
+  remove: (id: string) =>
+    safe(async () => {
+      const cur = (await getDoc(ref('lessons', id))).data();
+      const b = new Batcher();
+      b.delete(ref('lessons', id));
+      b.log('lessons', 'deleted', cur ? lessonLabel(cur) : '', id);
+      await b.commit();
+    }),
+  /** Clases que se solapan con un intervalo (no canceladas). */
   conflicts: (startsIso: string, endsIso: string, exclude: string[] = []) =>
-    run<Lesson[]>(sb().rpc('find_conflicts', { p_starts: startsIso, p_ends: endsIso, p_exclude: exclude })),
-  /** Clases futuras (desde una fecha) de una serie que no se han modificado individualmente. */
+    safe(async () => {
+      const from = new Date(new Date(startsIso).getTime() - 12 * 3600_000).toISOString();
+      const list = await lessonApi.range(from, endsIso);
+      return list.filter((l) => l.status !== 'cancelled' && !exclude.includes(l.id) && l.starts_at < endsIso && l.ends_at > startsIso);
+    }),
+  /** Sesiones programadas de una serie a partir de una fecha. */
   seriesFollowing: (seriesId: string, fromIso: string) =>
-    run<Lesson[]>(sb().from('lessons').select('*').eq('series_id', seriesId).gte('starts_at', fromIso).eq('status', 'scheduled').order('starts_at')),
-  removeMany: async (ids: string[]) => {
-    for (const part of chunks(ids)) await run(sb().from('lessons').delete().in('id', part));
-  },
+    safe(async () =>
+      (await all<Lesson>('lessons', where('series_id', '==', seriesId)))
+        .filter((l) => l.starts_at >= new Date(fromIso).toISOString() && l.status === 'scheduled')
+        .sort((a, b) => a.starts_at.localeCompare(b.starts_at)),
+    ),
+  removeMany: (ids: string[]) =>
+    safe(async () => {
+      const b = new Batcher();
+      ids.forEach((id) => b.delete(ref('lessons', id)));
+      await b.commit();
+    }),
 };
 
 export const seriesApi = {
-  create: (s: Omit<LessonSeries, 'id' | 'owner_id'>) => run<LessonSeries>(sb().from('lesson_series').insert(s).select().single()),
-  get: (id: string) => run<LessonSeries>(sb().from('lesson_series').select('*').eq('id', id).single()),
-  update: (id: string, patch: Partial<LessonSeries>) => run<LessonSeries>(sb().from('lesson_series').update(patch).eq('id', id).select().single()),
-  remove: (id: string) => run(sb().from('lesson_series').delete().eq('id', id)),
+  create: (s: Omit<LessonSeries, 'id' | 'owner_id'>) =>
+    safe(async () => {
+      const id = newId('series');
+      const data = { ...s, created_at: now(), updated_at: now() };
+      const b = new Batcher();
+      b.set(ref('series', id), data);
+      b.log('lesson_series', 'created', `${s.weekdays.length} día(s) por semana · ${s.start_time}`, id);
+      await b.commit();
+      return withId<LessonSeries>(id, data);
+    }),
+  get: (id: string) =>
+    safe(async () => {
+      const snap = await getDoc(ref('series', id));
+      if (!snap.exists()) throw new ApiError('Serie no encontrada', 'not-found');
+      return withId<LessonSeries>(id, snap.data());
+    }),
+  update: (id: string, patch: Partial<LessonSeries>) =>
+    safe(async () => {
+      const r = ref('series', id);
+      const cur = (await getDoc(r)).data();
+      if (!cur) throw new ApiError('Serie no encontrada', 'not-found');
+      const next: DocumentData = { ...cur, ...clean(patch), updated_at: now() };
+      if (next.end_date < next.start_date) next.end_date = next.start_date;
+      const b = writeBatch(db());
+      b.set(r, next);
+      await b.commit();
+      return withId<LessonSeries>(id, next);
+    }),
+  remove: (id: string) => safe(() => deleteDoc(ref('series', id))),
 };
 
 // ------------------------------------------------------------------ Tareas
 export type TaskInput = Partial<Omit<Task, 'id' | 'owner_id' | 'created_at' | 'updated_at' | 'copied_from'>>;
 
-async function attachAssignments(tasks: Task[]): Promise<TaskWithAssignments[]> {
-  if (!tasks.length) return [];
-  const all: Assignment[] = [];
-  for (const part of chunks(tasks.map((t) => t.id))) {
-    all.push(...(await run<Assignment[]>(sb().from('task_assignments').select('*').in('task_id', part))));
-  }
-  const by = new Map<string, Assignment[]>();
-  for (const a of all) by.set(a.task_id, [...(by.get(a.task_id) ?? []), a]);
-  return tasks.map((t) => ({ ...t, assignments: by.get(t.id) ?? [] }));
+type StoredAssignment = { status: AssignmentStatus; feedback: string; completed_at: string | null; reviewed_at: string | null; updated_at: string };
+type StoredTask = Omit<Task, 'id' | 'owner_id'> & {
+  student_ids: string[];
+  pending_ids: string[];
+  has_pending: boolean;
+  assignments: Record<string, StoredAssignment>;
+  copy_key: string | null;
+};
+
+const TASK_DEFAULTS = {
+  description: '',
+  category_id: null,
+  priority: 'normal',
+  due_on: null,
+  notes: '',
+  group_id: null,
+  lesson_id: null,
+  copied_from: null,
+  copy_key: null,
+};
+
+const newAssignment = (): StoredAssignment => ({ status: 'pending', feedback: '', completed_at: null, reviewed_at: null, updated_at: now() });
+
+/** Campos derivados de las asignaciones, usados en las consultas. */
+function derive<T extends { assignments: Record<string, unknown> }>(t: T) {
+  const asg = t.assignments as Record<string, StoredAssignment>;
+  const ids = Object.keys(asg).sort();
+  const pending = ids.filter((id) => asg[id].status === 'pending' || asg[id].status === 'in_progress');
+  return { ...t, student_ids: ids, pending_ids: pending, has_pending: pending.length > 0 };
+}
+
+function stamp(a: StoredAssignment, status: AssignmentStatus): StoredAssignment {
+  const done = status === 'completed' || status === 'reviewed';
+  return {
+    ...a,
+    status,
+    completed_at: done ? (a.completed_at ?? now()) : null,
+    reviewed_at: status === 'reviewed' ? (a.reviewed_at ?? now()) : null,
+    updated_at: now(),
+  };
+}
+
+function toTask(id: string, d: DocumentData): TaskWithAssignments {
+  const owner = uid();
+  const asg = (d.assignments ?? {}) as Record<string, StoredAssignment>;
+  const { assignments: _a, student_ids: _s, pending_ids: _p, has_pending: _h, ...rest } = d;
+  void _a;
+  void _s;
+  void _p;
+  void _h;
+  return {
+    ...(rest as Task),
+    id,
+    owner_id: owner,
+    assignments: Object.entries(asg)
+      .map(([sid, a]) => ({ id: `${id}__${sid}`, owner_id: owner, task_id: id, student_id: sid, ...a }) as Assignment)
+      .sort((a, b) => a.student_id.localeCompare(b.student_id)),
+  };
+}
+async function tasksOf(q: Query<DocumentData>) {
+  const snap = await getDocs(q);
+  return snap.docs.map((d) => toTask(d.id, d.data()));
+}
+const byWeekThenCreated = (a: Task, b: Task) => a.week_start.localeCompare(b.week_start) || a.created_at.localeCompare(b.created_at);
+
+/** Alumnos actuales (no archivados) de un grupo. */
+async function groupMemberIds(groupId: string) {
+  const snap = await getDocs(query(col('students'), where('group_ids', 'array-contains', groupId)));
+  return snap.docs.filter((d) => d.data().status !== 'archived').map((d) => d.id);
+}
+
+function parseAssignmentId(id: string) {
+  const [taskId, studentId] = id.split('__');
+  return { taskId, studentId };
 }
 
 export const taskApi = {
-  week: async (weekStart: string) =>
-    attachAssignments(await run<Task[]>(sb().from('tasks').select('*').eq('week_start', weekStart).order('created_at'))),
-  weeks: async (fromWeek: string, toWeek: string) =>
-    attachAssignments(
-      await run<Task[]>(sb().from('tasks').select('*').gte('week_start', fromWeek).lte('week_start', toWeek).order('week_start').order('created_at')),
+  week: (weekStart: string) => safe(async () => (await tasksOf(query(col('tasks'), where('week_start', '==', weekStart)))).sort(byWeekThenCreated)),
+  weeks: (fromWeek: string, toWeek: string) =>
+    safe(async () => (await tasksOf(query(col('tasks'), where('week_start', '>=', fromWeek), where('week_start', '<=', toWeek)))).sort(byWeekThenCreated)),
+  forStudent: (studentId: string) =>
+    safe(async () =>
+      (await tasksOf(query(col('tasks'), where('student_ids', 'array-contains', studentId)))).sort(
+        (a, b) => b.week_start.localeCompare(a.week_start) || a.created_at.localeCompare(b.created_at),
+      ),
     ),
-  forStudent: async (studentId: string) => {
-    const asg = await run<Assignment[]>(sb().from('task_assignments').select('*').eq('student_id', studentId));
-    if (!asg.length) return [] as TaskWithAssignments[];
-    const tasks: Task[] = [];
-    for (const part of chunks(asg.map((a) => a.task_id))) tasks.push(...(await run<Task[]>(sb().from('tasks').select('*').in('id', part))));
-    tasks.sort((a, b) => (a.week_start < b.week_start ? 1 : a.week_start > b.week_start ? -1 : a.created_at.localeCompare(b.created_at)));
-    return attachAssignments(tasks);
-  },
-  forGroup: async (groupId: string) =>
-    attachAssignments(await run<Task[]>(sb().from('tasks').select('*').eq('group_id', groupId).order('week_start', { ascending: false }).order('created_at'))),
-  search: async (filters: { q?: string; categoryId?: string; fromWeek?: string; toWeek?: string; groupId?: string }) => {
-    let q = sb().from('tasks').select('*');
-    if (filters.q) {
-      const term = filters.q.replace(/[,()*]/g, ' ').trim();
-      q = q.or(`title.ilike.*${term}*,description.ilike.*${term}*,notes.ilike.*${term}*`);
-    }
-    if (filters.categoryId) q = q.eq('category_id', filters.categoryId);
-    if (filters.groupId) q = q.eq('group_id', filters.groupId);
-    if (filters.fromWeek) q = q.gte('week_start', filters.fromWeek);
-    if (filters.toWeek) q = q.lte('week_start', filters.toWeek);
-    return attachAssignments(await run<Task[]>(q.order('week_start', { ascending: false }).limit(300)));
-  },
+  forGroup: (groupId: string) =>
+    safe(async () =>
+      (await tasksOf(query(col('tasks'), where('group_id', '==', groupId)))).sort((a, b) => b.week_start.localeCompare(a.week_start) || a.created_at.localeCompare(b.created_at)),
+    ),
+  /** Búsqueda: filtra en el servidor por categoría/grupo/semana y por texto en el cliente (sin tildes). */
+  search: (filters: { q?: string; categoryId?: string; fromWeek?: string; toWeek?: string; groupId?: string }) =>
+    safe(async () => {
+      const cs: QueryConstraint[] = [];
+      if (filters.categoryId) cs.push(where('category_id', '==', filters.categoryId));
+      else if (filters.groupId) cs.push(where('group_id', '==', filters.groupId));
+      let list = await tasksOf(query(col('tasks'), ...cs));
+      if (filters.groupId) list = list.filter((t) => t.group_id === filters.groupId);
+      if (filters.fromWeek) list = list.filter((t) => t.week_start >= filters.fromWeek!);
+      if (filters.toWeek) list = list.filter((t) => t.week_start <= filters.toWeek!);
+      if (filters.q) {
+        const q = norm(filters.q);
+        list = list.filter((t) => norm(`${t.title} ${t.description} ${t.notes}`).includes(q));
+      }
+      return list.sort((a, b) => b.week_start.localeCompare(a.week_start)).slice(0, 300);
+    }),
+
+  /** Crea una tarea para varios alumnos y/o un grupo completo (una asignación por integrante). */
+  create: (task: TaskInput, studentIds: string[], groupId: string | null) =>
+    safe(async () => {
+      const ids = new Set(studentIds);
+      if (groupId) (await groupMemberIds(groupId)).forEach((id) => ids.add(id));
+      const id = newId('tasks');
+      const assignments = Object.fromEntries([...ids].map((sid) => [sid, newAssignment()]));
+      const data = derive({ ...TASK_DEFAULTS, ...task, group_id: groupId, assignments, created_at: now(), updated_at: now() });
+      const b = new Batcher();
+      b.set(ref('tasks', id), data);
+      b.log('tasks', 'created', String(task.title ?? ''), id);
+      await b.commit();
+      return toTask(id, data) as Task;
+    }),
+  update: (id: string, patch: TaskInput) =>
+    safe(async () => {
+      const r = ref('tasks', id);
+      const cur = (await getDoc(r)).data() as StoredTask | undefined;
+      if (!cur) throw new ApiError('La tarea ya no existe.', 'not-found');
+      const next = derive({ ...TASK_DEFAULTS, ...cur, ...clean(patch), updated_at: now() });
+      const b = new Batcher();
+      b.set(r, next);
+      b.log('tasks', 'updated', next.title, id);
+      await b.commit();
+      return toTask(id, next) as Task;
+    }),
+  /** Ajusta los alumnos asignados (añade y quita) de forma atómica. */
+  setStudents: (taskId: string, studentIds: string[]) =>
+    safe(() =>
+      runTransaction(db(), async (tx) => {
+        const r = ref('tasks', taskId);
+        const cur = (await tx.get(r)).data() as StoredTask | undefined;
+        if (!cur) throw new ApiError('La tarea ya no existe.', 'not-found');
+        const assignments: Record<string, StoredAssignment> = {};
+        for (const sid of new Set(studentIds)) assignments[sid] = cur.assignments[sid] ?? newAssignment();
+        tx.set(r, derive({ ...cur, assignments, updated_at: now() }));
+      }),
+    ),
+  assignGroup: (taskId: string, groupId: string) =>
+    safe(async () => {
+      const members = await groupMemberIds(groupId);
+      return runTransaction(db(), async (tx) => {
+        const r = ref('tasks', taskId);
+        const cur = (await tx.get(r)).data() as StoredTask | undefined;
+        if (!cur) throw new ApiError('La tarea ya no existe.', 'not-found');
+        const assignments = { ...cur.assignments };
+        let added = 0;
+        for (const sid of members) if (!assignments[sid]) (assignments[sid] = newAssignment()), added++;
+        tx.set(r, derive({ ...cur, group_id: groupId, assignments, updated_at: now() }));
+        return added;
+      });
+    }),
+  remove: (id: string) =>
+    safe(async () => {
+      const cur = (await getDoc(ref('tasks', id))).data();
+      const b = new Batcher();
+      b.delete(ref('tasks', id));
+      b.log('tasks', 'deleted', String(cur?.title ?? ''), id);
+      await b.commit();
+    }),
+  removeAssignment: (assignmentId: string) =>
+    safe(async () => {
+      const { taskId, studentId } = parseAssignmentId(assignmentId);
+      await runTransaction(db(), async (tx) => {
+        const r = ref('tasks', taskId);
+        const t = (await tx.get(r)).data() as StoredTask | undefined;
+        if (!t) return;
+        const assignments = { ...t.assignments };
+        delete assignments[studentId];
+        tx.set(r, derive({ ...t, assignments, updated_at: now() }));
+      });
+    }),
+  /** Cambia el estado de varias asignaciones (agrupadas por tarea, en una transacción). */
+  setStatus: (assignmentIds: string[], status: AssignmentStatus) =>
+    safe(async () => {
+      const byTask = new Map<string, string[]>();
+      for (const aid of assignmentIds) {
+        const { taskId, studentId } = parseAssignmentId(aid);
+        byTask.set(taskId, [...(byTask.get(taskId) ?? []), studentId]);
+      }
+      await runTransaction(db(), async (tx) => {
+        const docs = await Promise.all([...byTask.keys()].map(async (tid) => [tid, (await tx.get(ref('tasks', tid))).data() as StoredTask | undefined] as const));
+        for (const [tid, t] of docs) {
+          if (!t) continue;
+          const assignments = { ...t.assignments };
+          for (const sid of byTask.get(tid)!) if (assignments[sid]) assignments[sid] = stamp(assignments[sid], status);
+          tx.set(ref('tasks', tid), derive({ ...t, assignments, updated_at: now() }));
+        }
+      });
+      return [] as Assignment[];
+    }),
+  setStatusForTasks: (taskIds: string[], status: AssignmentStatus) =>
+    safe(async () => {
+      await runTransaction(db(), async (tx) => {
+        const docs = await Promise.all(taskIds.map(async (tid) => [tid, (await tx.get(ref('tasks', tid))).data() as StoredTask | undefined] as const));
+        for (const [tid, t] of docs) {
+          if (!t) continue;
+          const assignments = Object.fromEntries(Object.entries(t.assignments).map(([sid, a]) => [sid, stamp(a, status)]));
+          tx.set(ref('tasks', tid), derive({ ...t, assignments, updated_at: now() }));
+        }
+      });
+      return [] as Assignment[];
+    }),
+  setFeedback: (assignmentId: string, feedback: string) =>
+    safe(async () => {
+      const { taskId, studentId } = parseAssignmentId(assignmentId);
+      await runTransaction(db(), async (tx) => {
+        const r = ref('tasks', taskId);
+        const t = (await tx.get(r)).data() as StoredTask | undefined;
+        if (!t?.assignments[studentId]) return;
+        tx.set(r, derive({ ...t, assignments: { ...t.assignments, [studentId]: { ...t.assignments[studentId], feedback, updated_at: now() } } }));
+      });
+    }),
 
   /**
-   * Crea una tarea y la asigna a alumnos y/o a un grupo completo.
-   * Si falla la asignación se elimina la tarea para no dejar datos huérfanos.
+   * Copia tareas a otra semana. Cada copia tiene un id determinista
+   * (origen + semana + alcance), así que nunca se duplica la misma tarea:
+   * si ya existe, se omite. Si studentId se indica, solo se copia la
+   * asignación de ese alumno (como tarea individual). Devuelve cuántas creó.
    */
-  create: async (task: TaskInput, studentIds: string[], groupId: string | null) => {
-    const created = await run<Task>(sb().from('tasks').insert({ ...task, group_id: null }).select().single());
-    try {
-      if (groupId) await run(sb().rpc('assign_task_to_group', { p_task_id: created.id, p_group_id: groupId }));
-      const extra = [...new Set(studentIds)];
-      if (extra.length) {
-        await run(
-          sb()
-            .from('task_assignments')
-            .upsert(extra.map((student_id) => ({ task_id: created.id, student_id })), { onConflict: 'task_id,student_id', ignoreDuplicates: true }),
-        );
-      }
-    } catch (e) {
-      await sb().from('tasks').delete().eq('id', created.id);
-      throw e;
-    }
-    return created;
-  },
-  update: (id: string, patch: TaskInput) => run<Task>(sb().from('tasks').update(patch).eq('id', id).select().single()),
-  /** Ajusta los alumnos asignados de una tarea (añade y quita). */
-  setStudents: async (taskId: string, studentIds: string[], current: string[]) => {
-    const add = studentIds.filter((id) => !current.includes(id));
-    const del = current.filter((id) => !studentIds.includes(id));
-    if (add.length) await run(sb().from('task_assignments').insert(add.map((student_id) => ({ task_id: taskId, student_id }))));
-    if (del.length) await run(sb().from('task_assignments').delete().eq('task_id', taskId).in('student_id', del));
-  },
-  assignGroup: (taskId: string, groupId: string) => run<number>(sb().rpc('assign_task_to_group', { p_task_id: taskId, p_group_id: groupId })),
-  remove: (id: string) => run(sb().from('tasks').delete().eq('id', id)),
-  removeAssignment: (id: string) => run(sb().from('task_assignments').delete().eq('id', id)),
-  setStatus: (assignmentIds: string[], status: AssignmentStatus) =>
-    run<Assignment[]>(sb().from('task_assignments').update({ status }).in('id', assignmentIds).select()),
-  setStatusForTasks: (taskIds: string[], status: AssignmentStatus) =>
-    run<Assignment[]>(sb().from('task_assignments').update({ status }).in('task_id', taskIds).select()),
-  setFeedback: (assignmentId: string, feedback: string) =>
-    run<Assignment>(sb().from('task_assignments').update({ feedback }).eq('id', assignmentId).select().single()),
   duplicate: (taskIds: string[], targetWeek: string, studentId: string | null = null) =>
-    run<number>(sb().rpc('duplicate_tasks', { p_task_ids: taskIds, p_target_week: targetWeek, p_student_id: studentId })),
+    safe(async () => {
+      const [y, m, d] = targetWeek.split('-').map(Number);
+      if (new Date(y, m - 1, d).getDay() !== 1) throw new ApiError('La semana de destino debe empezar en lunes');
+      const scope = studentId ?? 'all';
+      let created = 0;
+      for (const tid of taskIds) {
+        const src = (await getDoc(ref('tasks', tid))).data() as StoredTask | undefined;
+        if (!src || src.week_start === targetWeek) continue;
+        const key = `${tid}_${targetWeek}_${scope}`;
+        const shift = Math.round((Date.UTC(y, m - 1, d) - Date.parse(src.week_start + 'T00:00:00Z')) / 86400_000);
+        const addDaysKey = (k: string) => new Date(Date.parse(k + 'T00:00:00Z') + shift * 86400_000).toISOString().slice(0, 10);
+        let ids: string[];
+        if (src.group_id && !studentId) ids = await groupMemberIds(src.group_id);
+        else ids = Object.keys(src.assignments).filter((sid) => !studentId || sid === studentId);
+        const assignedOn = addDaysKey(src.assigned_on);
+        const data = derive({
+          ...TASK_DEFAULTS,
+          title: src.title,
+          description: src.description,
+          category_id: src.category_id,
+          priority: src.priority,
+          week_start: targetWeek,
+          assigned_on: assignedOn > targetWeek ? assignedOn : targetWeek,
+          due_on: src.due_on ? addDaysKey(src.due_on) : null,
+          notes: src.notes,
+          group_id: studentId ? null : src.group_id,
+          lesson_id: null,
+          copied_from: tid,
+          copy_key: key,
+          assignments: Object.fromEntries(ids.map((sid) => [sid, newAssignment()])),
+          created_at: now(),
+          updated_at: now(),
+        });
+        const ok = await runTransaction(db(), async (tx) => {
+          const r = ref('tasks', 'copy_' + key);
+          if ((await tx.get(r)).exists()) return false;
+          tx.set(r, data);
+          return true;
+        });
+        if (ok) created++;
+      }
+      if (created) {
+        const b = new Batcher();
+        b.log('tasks', 'created', `${created} ${created === 1 ? 'tarea copiada' : 'tareas copiadas'} a la semana del ${targetWeek.split('-').reverse().join('/')}`, null);
+        await b.commit();
+      }
+      return created;
+    }),
   /** Claves de copia existentes en una semana destino (para avisar de duplicados). */
   copiesIn: (targetWeek: string) =>
-    run<{ copied_from: string | null; copy_key: string | null }[]>(
-      sb().from('tasks').select('copied_from,copy_key').eq('week_start', targetWeek).not('copy_key', 'is', null),
-    ),
-  assignmentsForStudents: (studentIds: string[]) =>
-    studentIds.length ? run<Assignment[]>(sb().from('task_assignments').select('*').in('student_id', studentIds)) : Promise.resolve([] as Assignment[]),
-  pendingAssignments: () => run<Assignment[]>(sb().from('task_assignments').select('*').in('status', ['pending', 'in_progress'])),
+    safe(async () => (await tasksOf(query(col('tasks'), where('week_start', '==', targetWeek)))).filter((t) => t.copy_key).map((t) => ({ copied_from: t.copied_from, copy_key: t.copy_key ?? null }))),
+  pendingAssignments: () =>
+    safe(async () => (await tasksOf(query(col('tasks'), where('has_pending', '==', true)))).flatMap((t) => t.assignments.filter((a) => a.status === 'pending' || a.status === 'in_progress'))),
 };
 
 // ------------------------------------------------------------------ Seguimiento
+const byNotedDesc = (a: ProgressNote, b: ProgressNote) => b.noted_on.localeCompare(a.noted_on) || b.created_at.localeCompare(a.created_at);
+
 export const noteApi = {
-  forStudent: (studentId: string) =>
-    run<ProgressNote[]>(sb().from('progress_notes').select('*').eq('student_id', studentId).order('noted_on', { ascending: false }).order('created_at', { ascending: false })),
-  recent: () => run<ProgressNote[]>(sb().from('progress_notes').select('*').order('noted_on', { ascending: false }).limit(300)),
-  create: (n: Partial<ProgressNote>) => run<ProgressNote>(sb().from('progress_notes').insert(n).select().single()),
-  update: (id: string, patch: Partial<ProgressNote>) => run<ProgressNote>(sb().from('progress_notes').update(patch).eq('id', id).select().single()),
-  remove: (id: string) => run(sb().from('progress_notes').delete().eq('id', id)),
-  search: (q: string) => {
-    const term = q.replace(/[,()*]/g, ' ').trim();
-    return run<ProgressNote[]>(sb().from('progress_notes').select('*').ilike('body', `*${term}*`).order('noted_on', { ascending: false }).limit(50));
-  },
+  forStudent: (studentId: string) => safe(async () => (await all<ProgressNote>('notes', where('student_id', '==', studentId))).sort(byNotedDesc)),
+  recent: () => safe(async () => (await all<ProgressNote>('notes')).sort(byNotedDesc).slice(0, 300)),
+  create: (n: Partial<ProgressNote>) =>
+    safe(async () => {
+      const id = newId('notes');
+      const data = { lesson_id: null, kind: 'observation', category_id: null, noted_on: new Date().toISOString().slice(0, 10), ...clean(n), created_at: now(), updated_at: now() };
+      const b = writeBatch(db());
+      b.set(ref('notes', id), data);
+      await b.commit();
+      return withId<ProgressNote>(id, data);
+    }),
+  update: (id: string, patch: Partial<ProgressNote>) =>
+    safe(async () => {
+      const r = ref('notes', id);
+      const cur = (await getDoc(r)).data();
+      const next = { ...cur, ...clean(patch), updated_at: now() };
+      const b = writeBatch(db());
+      b.set(r, next);
+      await b.commit();
+      return withId<ProgressNote>(id, next);
+    }),
+  remove: (id: string) => safe(() => deleteDoc(ref('notes', id))),
+  search: (q: string) => safe(async () => (await noteApi.recent()).filter((n) => norm(n.body).includes(norm(q))).slice(0, 50)),
 };
 
 export const goalApi = {
   forStudent: (studentId: string) =>
-    run<Goal[]>(sb().from('goals').select('*').eq('student_id', studentId).order('status').order('created_at', { ascending: false })),
-  all: () => run<Goal[]>(sb().from('goals').select('*')),
-  create: (g: Partial<Goal>) => run<Goal>(sb().from('goals').insert(g).select().single()),
-  update: (id: string, patch: Partial<Goal>) => run<Goal>(sb().from('goals').update(patch).eq('id', id).select().single()),
-  remove: (id: string) => run(sb().from('goals').delete().eq('id', id)),
+    safe(async () => {
+      const order = { active: 0, achieved: 1, dropped: 2 } as const;
+      return (await all<Goal>('goals', where('student_id', '==', studentId))).sort((a, b) => order[a.status] - order[b.status] || b.created_at.localeCompare(a.created_at));
+    }),
+  all: () => safe(() => all<Goal>('goals')),
+  create: (g: Partial<Goal>) =>
+    safe(async () => {
+      const id = newId('goals');
+      const data: DocumentData = { description: '', category_id: null, status: 'active', target_date: null, achieved_on: null, ...clean(g), created_at: now(), updated_at: now() };
+      const b = new Batcher();
+      b.set(ref('goals', id), data);
+      b.log('goals', 'created', String(data.title ?? ''), id);
+      await b.commit();
+      return withId<Goal>(id, data);
+    }),
+  update: (id: string, patch: Partial<Goal>) =>
+    safe(async () => {
+      const r = ref('goals', id);
+      const cur = (await getDoc(r)).data();
+      if (!cur) throw new ApiError('El objetivo ya no existe.', 'not-found');
+      const next: DocumentData = { ...cur, ...clean(patch), updated_at: now() };
+      const b = new Batcher();
+      b.set(r, next);
+      b.log('goals', 'updated', String(next.title ?? ''), id);
+      await b.commit();
+      return withId<Goal>(id, next);
+    }),
+  remove: (id: string) =>
+    safe(async () => {
+      const cur = (await getDoc(ref('goals', id))).data();
+      const b = new Batcher();
+      b.delete(ref('goals', id));
+      b.log('goals', 'deleted', String(cur?.title ?? ''), id);
+      await b.commit();
+    }),
 };
 
 // ------------------------------------------------------------------ Actividad y búsqueda
 export const activityApi = {
-  recent: (limit = 12) => run<ActivityEntry[]>(sb().from('activity_log').select('*').order('id', { ascending: false }).limit(limit)),
+  recent: (n = 12) => safe(() => all<ActivityEntry>('activity', orderBy('created_at', 'desc'), qLimit(n))),
 };
 
 export const searchApi = {
-  lessons: (q: string) => {
-    const term = q.replace(/[,()*]/g, ' ').trim();
-    return run<Lesson[]>(
-      sb()
-        .from('lessons')
-        .select('*')
-        .or(`plan.ilike.*${term}*,notes.ilike.*${term}*,summary.ilike.*${term}*,next_goals.ilike.*${term}*,lesson_type.ilike.*${term}*,location.ilike.*${term}*`)
-        .order('starts_at', { ascending: false })
-        .limit(50),
-    );
-  },
+  lessons: (q: string) =>
+    safe(async () => {
+      const term = norm(q);
+      return (await all<Lesson>('lessons'))
+        .filter((l) => norm(`${l.plan} ${l.notes} ${l.summary} ${l.next_goals} ${l.lesson_type} ${l.location}`).includes(term))
+        .sort((a, b) => b.starts_at.localeCompare(a.starts_at))
+        .slice(0, 50);
+    }),
 };
 
 /** Exporta todos los datos del profesor (copia de seguridad en JSON). */
 export async function exportAll() {
-  const tables = ['profiles', 'task_categories', 'students', 'groups', 'group_members', 'lesson_series', 'lessons', 'tasks', 'task_assignments', 'progress_notes', 'goals'] as const;
-  const out: Record<string, unknown[]> = {};
-  for (const t of tables) out[t] = await run<unknown[]>(sb().from(t).select('*'));
-  return { exported_at: new Date().toISOString(), app: 'Aulora', version: 1, data: out };
+  return safe(async () => {
+    const out: Record<string, unknown> = { profile: await profileApi.get() };
+    for (const c of ['categories', 'students', 'groups', 'series', 'lessons', 'tasks', 'notes', 'goals'] as const) out[c] = (await getDocs(col(c))).docs.map((d) => ({ id: d.id, ...d.data() }));
+    return { exported_at: now(), app: 'Aulora', version: 2, data: out };
+  });
 }

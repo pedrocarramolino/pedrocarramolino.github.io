@@ -1,7 +1,6 @@
 'use client';
 import { Suspense, useEffect, useState } from 'react';
 import { useSearchParams } from 'next/navigation';
-import { useQuery } from '@tanstack/react-query';
 import { toast } from 'sonner';
 import { Download, LogOut, Monitor, Moon, Plus, Sun, Trash2 } from 'lucide-react';
 import { Button, Field, Input, LabeledInput, Segmented } from '@/components/ui/controls';
@@ -12,7 +11,9 @@ import { ColorPicker } from '@/components/ui/pickers';
 import { useTheme, type ThemePref } from '@/components/layout/theme';
 import { useAction, useCategories, useProfile } from '@/hooks/data';
 import { categoryApi, exportAll, profileApi } from '@/services/api';
-import { supabase } from '@/lib/supabase/client';
+import { EmailAuthProvider, reauthenticateWithCredential, signOut, updatePassword } from 'firebase/auth';
+import { firebaseAuth } from '@/lib/firebase';
+import { useAuth } from '@/components/layout/auth';
 import { COLORS, cvar } from '@/lib/colors';
 import type { Category } from '@/lib/types';
 
@@ -20,7 +21,7 @@ function SettingsPage() {
   const params = useSearchParams();
   const profile = useProfile();
   const { pref, setPref } = useTheme();
-  const user = useQuery({ queryKey: ['auth-user'], queryFn: async () => (await supabase().auth.getUser()).data.user });
+  const { user } = useAuth();
 
   return (
     <div className="max-w-3xl">
@@ -52,13 +53,13 @@ function SettingsPage() {
           <CardHeader title="Cuenta y datos" />
           <div className="space-y-4 px-4 pb-4">
             <p className="text-sm text-fg-2">
-              Sesión iniciada como <strong>{user.data?.email ?? '…'}</strong>. Tus datos se guardan en tu base de datos de Supabase y solo tú puedes acceder a ellos.
+              Sesión iniciada como <strong>{user?.email ?? '…'}</strong>. Tus datos se guardan en tu proyecto de Firebase y solo tú puedes acceder a ellos.
             </p>
             <div className="flex flex-wrap gap-2">
               <ExportButton />
               <Button
                 onClick={async () => {
-                  await supabase().auth.signOut();
+                  await signOut(firebaseAuth());
                   window.location.assign('/login');
                 }}
               >
@@ -204,6 +205,7 @@ function CategoryRow({ c, onDelete }: { c: Category; onDelete: () => void }) {
 }
 
 function PasswordCard({ highlight = false }: { highlight?: boolean }) {
+  const [current, setCurrent] = useState('');
   const [pw, setPw] = useState('');
   const [pw2, setPw2] = useState('');
   const [loading, setLoading] = useState(false);
@@ -211,27 +213,42 @@ function PasswordCard({ highlight = false }: { highlight?: boolean }) {
     e.preventDefault();
     if (pw.length < 6) return toast.error('La contraseña debe tener al menos 6 caracteres');
     if (pw !== pw2) return toast.error('Las contraseñas no coinciden');
+    const user = firebaseAuth().currentUser;
+    if (!user?.email) return;
     setLoading(true);
-    const { error } = await supabase().auth.updateUser({ password: pw });
-    setLoading(false);
-    if (error) return toast.error(error.message);
-    toast.success('Contraseña actualizada');
-    setPw('');
-    setPw2('');
+    try {
+      // Firebase exige haber iniciado sesión recientemente para cambiar la contraseña
+      await reauthenticateWithCredential(user, EmailAuthProvider.credential(user.email, current));
+      await updatePassword(user, pw);
+      toast.success('Contraseña actualizada');
+      setCurrent('');
+      setPw('');
+      setPw2('');
+    } catch (err) {
+      const code = (err as { code?: string }).code;
+      toast.error(code === 'auth/invalid-credential' || code === 'auth/wrong-password' ? 'La contraseña actual no es correcta' : (err as Error).message);
+    } finally {
+      setLoading(false);
+    }
   };
   return (
     <Card className={cn(highlight && 'border-accent ring-3 ring-[var(--ring)]')}>
-      <CardHeader title={highlight ? 'Elige una nueva contraseña' : 'Cambiar contraseña'} />
-      <form onSubmit={submit} className="grid grid-cols-1 gap-3 px-4 pb-4 sm:grid-cols-[1fr_1fr_auto] sm:items-end">
+      <CardHeader title="Cambiar contraseña" />
+      <form onSubmit={submit} className="grid grid-cols-1 gap-3 px-4 pb-4 sm:grid-cols-3 sm:items-end">
+        <Field label="Contraseña actual">
+          <Input type="password" autoComplete="current-password" value={current} onChange={(e) => setCurrent(e.target.value)} />
+        </Field>
         <Field label="Nueva contraseña">
           <Input type="password" autoComplete="new-password" value={pw} onChange={(e) => setPw(e.target.value)} />
         </Field>
         <Field label="Repítela">
           <Input type="password" autoComplete="new-password" value={pw2} onChange={(e) => setPw2(e.target.value)} />
         </Field>
-        <Button type="submit" variant="primary" loading={loading} disabled={!pw}>
-          Actualizar
-        </Button>
+        <div className="flex justify-end sm:col-span-3">
+          <Button type="submit" variant="primary" loading={loading} disabled={!pw || !current}>
+            Actualizar contraseña
+          </Button>
+        </div>
       </form>
     </Card>
   );

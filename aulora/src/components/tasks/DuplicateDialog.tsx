@@ -39,7 +39,7 @@ export function DuplicateDialog({
       has: (id: string) => {
         const t = tasks.find((x) => x.id === id);
         if (!t) return false;
-        return keys.has(`${id}:${target}:all`) || keys.has(`${id}:${target}:${scopeOf(t)}`);
+        return keys.has(`${id}_${target}_all`) || keys.has(`${id}_${target}_${scopeOf(t)}`);
       },
     }),
     // eslint-disable-next-line react-hooks/exhaustive-deps

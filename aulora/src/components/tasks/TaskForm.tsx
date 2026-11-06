@@ -52,7 +52,7 @@ export function TaskForm({ draft, onClose }: { draft: TaskDraft; onClose: () => 
       };
       if (editing) {
         await taskApi.update(existing.id, { ...fields, title: titles[0] });
-        if (!existing.group_id) await taskApi.setStudents(existing.id, studentIds, existing.assignments.map((a) => a.student_id));
+        if (!existing.group_id) await taskApi.setStudents(existing.id, studentIds);
         const changed = existing.assignments.filter((a) => statuses[a.id] && statuses[a.id] !== a.status && studentIds.includes(a.student_id));
         for (const a of changed) await taskApi.setStatus([a.id], statuses[a.id]);
         return 1;

@@ -1,43 +1,22 @@
-// Pruebas de extremo a extremo con Playwright contra la app compilada.
+// Pruebas de extremo a extremo con Playwright contra la app compilada y los
+// emuladores oficiales de Firebase (Auth + Firestore, con las reglas reales).
 //
-// 1. Crea una base de datos local (stub de Supabase + migraciones).
-// 2. Arranca el backend de pruebas (Auth + PostgREST simulados sobre Postgres real con RLS).
-// 3. Arranca `next start` (requiere `npm run build` con .env.local apuntando a http://localhost:54321).
-// 4. Ejecuta los escenarios de e2e/scenarios.mjs.
-//
-//   npm run build && npm run e2e
+//   npm run e2e:build   # compila la app apuntando a los emuladores (.env.e2e)
+//   npm run e2e         # arranca los emuladores, la app y ejecuta los escenarios
 import { spawn } from 'node:child_process';
-import { readFileSync, readdirSync, mkdirSync } from 'node:fs';
+import { mkdirSync, readFileSync } from 'node:fs';
 import { createRequire } from 'node:module';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
-import pg from 'pg';
+import { initializeTestEnvironment } from '@firebase/rules-unit-testing';
+import { collection, getDocs, setLogLevel } from 'firebase/firestore';
 
+setLogLevel('silent');
 const require = createRequire(import.meta.url);
 const { chromium } = require('playwright');
 const here = path.dirname(fileURLToPath(import.meta.url));
 const root = path.join(here, '..');
-const ADMIN = process.env.DATABASE_URL ?? 'postgres://postgres:postgres@localhost:5432/postgres';
-const DB = 'aula_e2e';
-
-async function setupDb() {
-  const admin = new pg.Client({ connectionString: ADMIN });
-  await admin.connect();
-  await admin.query(`select pg_terminate_backend(pid) from pg_stat_activity where datname = '${DB}' and pid <> pg_backend_pid()`);
-  await admin.query(`drop database if exists ${DB}`);
-  await admin.query(`create database ${DB}`);
-  await admin.end();
-  const url = new URL(ADMIN);
-  url.pathname = '/' + DB;
-  const c = new pg.Client({ connectionString: url.toString() });
-  await c.connect();
-  await c.query(readFileSync(path.join(here, 'db/supabase-stub.sql'), 'utf8'));
-  for (const f of readdirSync(path.join(root, 'supabase/migrations')).sort()) {
-    await c.query(readFileSync(path.join(root, 'supabase/migrations', f), 'utf8'));
-  }
-  await c.end();
-  return url.toString();
-}
+const PROJECT = 'demo-aulora';
 
 function start(cmd, args, env, ready) {
   return new Promise((resolve, reject) => {
@@ -55,25 +34,51 @@ function start(cmd, args, env, ready) {
   });
 }
 
-const dbUrl = await setupDb();
-const backend = await start('node', ['e2e/backend/server.mjs'], { DATABASE_URL: dbUrl, DEBUG: process.env.VERBOSE ?? '' }, /Backend de pruebas/);
-const web = await start('npx', ['next', 'start', '-p', '3100'], { TZ: 'Europe/Madrid' }, /Ready|started server|Local:/);
+// Acceso de administración a los datos del emulador (sin reglas) para verificar.
+const env = await initializeTestEnvironment({
+  projectId: PROJECT,
+  firestore: { rules: readFileSync(path.join(root, 'firestore.rules'), 'utf8'), host: '127.0.0.1', port: 8080 },
+});
+await env.clearFirestore();
+await fetch(`http://127.0.0.1:9099/emulator/v1/projects/${PROJECT}/accounts`, { method: 'DELETE' });
 
+const admin = {
+  /** uid de la cuenta con ese correo. */
+  async uid(email) {
+    const r = await fetch(`http://127.0.0.1:9099/identitytoolkit.googleapis.com/v1/projects/${PROJECT}/accounts:query`, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json', authorization: 'Bearer owner' },
+      body: JSON.stringify({ returnUserInfo: true }),
+    });
+    const j = await r.json();
+    return (j.userInfo ?? []).find((u) => u.email === email)?.localId;
+  },
+  /** Documentos de una colección de un profesor. */
+  async docs(uid, name) {
+    let out = [];
+    await env.withSecurityRulesDisabled(async (ctx) => {
+      const snap = await getDocs(collection(ctx.firestore(), 'users', uid, name));
+      out = snap.docs.map((d) => ({ id: d.id, ...d.data() }));
+    });
+    return out;
+  },
+};
+
+const web = await start('npx', ['next', 'start', '-p', '3100'], { TZ: 'Europe/Madrid' }, /Ready|started server|Local:/);
 const browser = await chromium.launch();
 mkdirSync(path.join(here, 'shots'), { recursive: true });
 let failed = 0;
 try {
   const { run } = await import('./scenarios.mjs');
-  failed = await run({ browser, base: 'http://localhost:3100', shots: path.join(here, 'shots'), dbUrl });
+  failed = await run({ browser, base: 'http://localhost:3100', shots: path.join(here, 'shots'), admin });
 } catch (e) {
   console.error(e);
   failed = 1;
 } finally {
   await browser.close();
-  for (const p of [web, backend]) {
-    try {
-      process.kill(-p.pid, 'SIGTERM');
-    } catch {}
-  }
+  await env.cleanup();
+  try {
+    process.kill(-web.pid, 'SIGTERM');
+  } catch {}
 }
 process.exit(failed ? 1 : 0);

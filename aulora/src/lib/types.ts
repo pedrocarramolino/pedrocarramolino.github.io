@@ -39,6 +39,8 @@ export interface Student {
   notes: string;
   status: StudentStatus;
   color: string;
+  /** Grupos a los que pertenece (relación N:M guardada en el alumno). */
+  group_ids: string[];
   created_at: string;
   updated_at: string;
 }
@@ -117,6 +119,7 @@ export interface Task {
   group_id: string | null;
   lesson_id: string | null;
   copied_from: string | null;
+  copy_key?: string | null;
   created_at: string;
   updated_at: string;
 }
@@ -164,7 +167,7 @@ export interface Goal {
 }
 
 export interface ActivityEntry {
-  id: number;
+  id: string;
   entity: string;
   entity_id: string | null;
   action: 'created' | 'updated' | 'deleted';

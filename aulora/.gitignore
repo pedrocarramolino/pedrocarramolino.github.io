@@ -8,3 +8,6 @@ next-env.d.ts
 .vercel
 e2e/shots
 test-results
+firestore-debug.log
+firebase-debug.log
+ui-debug.log

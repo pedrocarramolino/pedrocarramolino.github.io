@@ -1,5 +1,4 @@
 // Escenarios E2E de Aulora. Cada paso usa la interfaz real y verifica en la base de datos.
-import pg from 'pg';
 
 const pad = (n) => String(n).padStart(2, '0');
 const key = (d) => `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`;
@@ -15,9 +14,16 @@ const addDays = (d, n) => {
   return x;
 };
 
-export async function run({ browser, base, shots, dbUrl }) {
-  const db = new pg.Client({ connectionString: dbUrl });
-  await db.connect();
+export async function run({ browser, base, shots, admin }) {
+  let me;
+  /** Documentos del profesor principal en Firestore (lectura de administración). */
+  const docs = async (name) => {
+    me ??= await admin.uid('pedro@test.es');
+    return admin.docs(me, name);
+  };
+  const madrid = (iso) => new Date(iso).toLocaleTimeString('es-ES', { hour: '2-digit', minute: '2-digit', timeZone: 'Europe/Madrid' });
+  const asgCount = (t) => Object.keys(t.assignments ?? {}).length;
+  const statuses = (t) => Object.values(t.assignments ?? {}).map((a) => a.status);
   let failed = 0;
   const errors = [];
   const step = async (name, fn) => {
@@ -33,7 +39,6 @@ export async function run({ browser, base, shots, dbUrl }) {
   const expect = (cond, msg) => {
     if (!cond) throw new Error(msg);
   };
-  const one = async (sql, params) => (await db.query(sql, params)).rows;
 
   const ctx = await browser.newContext({ viewport: { width: 1440, height: 900 }, timezoneId: 'Europe/Madrid', locale: 'es-ES' });
   const page = await ctx.newPage();
@@ -59,6 +64,7 @@ export async function run({ browser, base, shots, dbUrl }) {
   });
 
   await step('registro e inicio de sesión', async () => {
+    await page.goto(base + '/login');
     await page.getByRole('button', { name: 'Crear una cuenta nueva' }).click();
     await page.getByLabel('Tu nombre').fill('Pedro Carramolino');
     await page.getByLabel('Correo electrónico').fill('pedro@test.es');
@@ -81,12 +87,12 @@ export async function run({ browser, base, shots, dbUrl }) {
       await page.getByLabel('Apellidos').fill(last);
       await page.getByLabel('Instrumento o especialidad').fill(inst);
       await page.getByRole('button', { name: 'Crear alumno' }).click();
-      await page.waitForURL(/\/alumnos\/[0-9a-f-]{36}$/);
+      await page.waitForURL(/\/alumnos\/[A-Za-z0-9]{20}$/);
       await page.getByRole('heading', { name: `${first} ${last}` }).waitFor();
       students[first] = page.url().split('/').pop();
     }
-    const rows = await one('select count(*)::int n from students');
-    expect(rows[0].n === 3, `esperados 3 alumnos, hay ${rows[0].n}`);
+    const n = (await docs('students')).length;
+    expect(n === 3, `esperados 3 alumnos, hay ${n}`);
   });
 
   let groupId;
@@ -97,10 +103,10 @@ export async function run({ browser, base, shots, dbUrl }) {
     await page.getByRole('dialog').getByRole('button', { name: /Hugo García/ }).click();
     await page.getByRole('dialog').getByRole('button', { name: /Alberto Ruiz/ }).click();
     await page.getByRole('button', { name: 'Crear grupo' }).click();
-    await page.waitForURL(/\/grupos\/[0-9a-f-]{36}/);
+    await page.waitForURL(/\/grupos\/[A-Za-z0-9]{20}/);
     groupId = page.url().split('/').pop().split('?')[0];
-    const m = await one('select count(*)::int n from group_members where group_id = $1', [groupId]);
-    expect(m[0].n === 2, 'el grupo debería tener 2 integrantes');
+    const m = (await docs('students')).filter((s) => s.group_ids.includes(groupId)).length;
+    expect(m === 2, 'el grupo debería tener 2 integrantes');
   });
 
   await step('editar, duplicar y archivar alumno', async () => {
@@ -112,8 +118,8 @@ export async function run({ browser, base, shots, dbUrl }) {
     await page.getByRole('button', { name: 'Más acciones' }).click();
     await page.getByRole('menuitem', { name: 'Archivar' }).click();
     await toast('archivado');
-    const r = await one(`select status from students where last_name = 'Martín (copia)'`);
-    expect(r[0]?.status === 'archived', 'la copia debería estar archivada');
+    const r = (await docs('students')).find((s) => s.last_name === 'Martín (copia)');
+    expect(r?.status === 'archived', 'la copia debería estar archivada');
     await page.goto(`${base}/alumnos`);
     await page.getByText('3 activos').waitFor();
   });
@@ -130,8 +136,8 @@ export async function run({ browser, base, shots, dbUrl }) {
     await dlg.getByLabel('Hasta el').fill(key(addDays(nextMonday, 16)));
     await dlg.getByRole('button', { name: 'Crear 6 clases' }).click();
     await toast('Serie creada: 6 clases');
-    const r = await one('select count(*)::int n from lessons where series_id is not null');
-    expect(r[0].n === 6, `esperadas 6 clases, hay ${r[0].n}`);
+    const n = (await docs('lessons')).filter((l) => l.series_id).length;
+    expect(n === 6, `esperadas 6 clases, hay ${n}`);
     await page.locator('[role=button][aria-label^="Hugo García"]').nth(1).waitFor();
   });
 
@@ -157,8 +163,9 @@ export async function run({ browser, base, shots, dbUrl }) {
     await page.mouse.move(box.x + box.width / 2, box.y + 8 + 56, { steps: 6 });
     await page.mouse.up();
     await toast('Clase movida');
-    const r = await one(`select to_char(starts_at at time zone 'Europe/Madrid', 'HH24:MI') t from lessons l join students s on s.id = l.student_id where s.first_name = 'Alberto'`);
-    expect(r[0].t === '18:30', `esperado 18:30, está a las ${r[0].t}`);
+    const alberto = (await docs('students')).find((s) => s.first_name === 'Alberto');
+    const l = (await docs('lessons')).find((x) => x.student_id === alberto.id);
+    expect(madrid(l.starts_at) === '18:30', `esperado 18:30, está a las ${madrid(l.starts_at)}`);
   });
 
   await step('modificar una sesión no cambia el resto de la serie', async () => {
@@ -170,8 +177,10 @@ export async function run({ browser, base, shots, dbUrl }) {
     await dlg.getByLabel('Hora').fill('19:00');
     await dlg.getByRole('button', { name: 'Guardar' }).click();
     await toast('Clase actualizada');
-    const r = await one(`select to_char(starts_at at time zone 'Europe/Madrid', 'HH24:MI') t, count(*)::int n, bool_or(is_modified) m from lessons where series_id is not null group by 1 order by 1`);
-    expect(r.length === 2 && r[0].t === '17:00' && r[0].n === 5 && r[1].t === '19:00' && r[1].n === 1 && r[1].m, JSON.stringify(r));
+    const series = (await docs('lessons')).filter((l) => l.series_id);
+    const at17 = series.filter((l) => madrid(l.starts_at) === '17:00');
+    const at19 = series.filter((l) => madrid(l.starts_at) === '19:00');
+    expect(at17.length === 5 && at19.length === 1 && at19[0].is_modified && !at17.some((l) => l.is_modified), series.map((l) => madrid(l.starts_at)).join(','));
     await page.keyboard.press('Escape');
   });
 
@@ -196,24 +205,27 @@ export async function run({ browser, base, shots, dbUrl }) {
     await grp.fill('Dictado musical');
     await grp.press('Enter');
     await page.getByText('Dictado musical').waitFor();
-    const r = await one(`select t.title, count(a.id)::int n from tasks t left join task_assignments a on a.task_id = t.id group by t.title order by 1`);
-    expect(JSON.stringify(r) === JSON.stringify([{ title: 'Concierto de Arutunian', n: 1 }, { title: 'Dictado musical', n: 2 }, { title: 'Estudio nº 4', n: 1 }]), JSON.stringify(r));
+    const r = (await docs('tasks')).map((t) => `${t.title}:${asgCount(t)}`).sort();
+    expect(JSON.stringify(r) === JSON.stringify(['Concierto de Arutunian:1', 'Dictado musical:2', 'Estudio nº 4:1']), JSON.stringify(r));
   });
 
   await step('vista general: con tareas / sin tareas', async () => {
     await page.getByRole('button', { name: /Con tareas\s*2/ }).waitFor();
     await page.getByRole('button', { name: /Sin tareas\s*1/ }).click();
     await page.getByRole('link', { name: /^Lucía Martín/ }).waitFor();
-    expect((await page.getByRole('link', { name: /^Hugo García/ }).count()) === 0, 'Hugo no debería aparecer en «Sin tareas»');
+    await page.getByRole('link', { name: /^Hugo García/ }).waitFor({ state: 'detached', timeout: 3000 }).catch(() => {
+      throw new Error('Hugo no debería aparecer en «Sin tareas»');
+    });
     await page.getByRole('button', { name: /Sin tareas\s*1/ }).click();
+    await page.getByRole('link', { name: /^Hugo García/ }).waitFor();
   });
 
   await step('cambiar el estado de una tarea', async () => {
     const row = page.locator('div.group').filter({ hasText: 'Estudio nº 4' }).first();
     await row.getByRole('button', { name: /Estado: Pendiente/ }).click();
     await row.getByRole('button', { name: /Estado: En proceso/ }).waitFor();
-    const r = await one(`select a.status from task_assignments a join tasks t on t.id = a.task_id where t.title = 'Estudio nº 4'`);
-    expect(r[0].status === 'in_progress', r[0].status);
+    const t = (await docs('tasks')).find((x) => x.title === 'Estudio nº 4');
+    expect(statuses(t)[0] === 'in_progress', statuses(t).join());
   });
 
   await step('tarea con formulario: varios alumnos y categoría', async () => {
@@ -226,8 +238,9 @@ export async function run({ browser, base, shots, dbUrl }) {
     await dlg.getByRole('tab', { name: 'Alta' }).click();
     await dlg.getByRole('button', { name: 'Asignar tarea' }).click();
     await toast('Tarea asignada');
-    const r = await one(`select t.priority, c.name, count(a.id)::int n from tasks t join task_categories c on c.id = t.category_id join task_assignments a on a.task_id = t.id where t.title = 'Escalas mayores' group by 1, 2`);
-    expect(r[0]?.n === 2 && r[0].priority === 'high' && r[0].name === 'Técnica', JSON.stringify(r));
+    const t = (await docs('tasks')).find((x) => x.title === 'Escalas mayores');
+    const cat = (await docs('categories')).find((c) => c.id === t?.category_id);
+    expect(t && asgCount(t) === 2 && t.priority === 'high' && cat?.name === 'Técnica', JSON.stringify({ t, cat }));
   });
 
   await step('copiar la semana a la siguiente sin duplicar', async () => {
@@ -235,10 +248,9 @@ export async function run({ browser, base, shots, dbUrl }) {
     const dlg = page.getByRole('dialog');
     await dlg.getByRole('button', { name: 'Copiar 4 tareas' }).click();
     await toast('4 tareas copiadas');
-    const r = await one(`select count(*)::int n from tasks where week_start = $1`, [key(nextMonday)]);
-    expect(r[0].n === 4, `esperadas 4 copias, hay ${r[0].n}`);
-    const st = await one(`select distinct a.status from task_assignments a join tasks t on t.id = a.task_id where t.week_start = $1`, [key(nextMonday)]);
-    expect(st.length === 1 && st[0].status === 'pending', 'las copias deben empezar pendientes');
+    const copies = (await docs('tasks')).filter((t) => t.week_start === key(nextMonday));
+    expect(copies.length === 4, `esperadas 4 copias, hay ${copies.length}`);
+    expect(copies.flatMap(statuses).every((x) => x === 'pending'), 'las copias deben empezar pendientes');
     await page.getByRole('button', { name: /Copiar semana/ }).click();
     await page.getByRole('dialog').getByText('Ya copiada').first().waitFor();
     expect(await page.getByRole('dialog').getByRole('button', { name: /^Copiar\s+tareas$/ }).isDisabled(), 'el botón debería estar desactivado');
@@ -249,7 +261,7 @@ export async function run({ browser, base, shots, dbUrl }) {
   });
 
   await step('ficha de clase: tareas, resumen y finalizar sesión', async () => {
-    const [l] = await one(`select id from lessons where series_id is not null order by starts_at limit 1`);
+    const [l] = (await docs('lessons')).filter((x) => x.series_id).sort((a, b) => a.starts_at.localeCompare(b.starts_at));
     await page.goto(`${base}/clases/${l.id}`);
     // aparece en la semana de la clase (copia) y en «semanas anteriores» (original)
     await page.getByText('Concierto de Arutunian').nth(1).waitFor();
@@ -260,8 +272,8 @@ export async function run({ browser, base, shots, dbUrl }) {
     await page.getByLabel('Resumen de lo trabajado').fill('Buen sonido en el registro agudo. Repasar compases 20-32.');
     await page.getByRole('button', { name: 'Finalizar sesión' }).click();
     await toast('Sesión finalizada');
-    const r = await one(`select status, plan, summary from lessons where id = $1`, [l.id]);
-    expect(r[0].status === 'completed' && r[0].plan.startsWith('Flexibilidad') && r[0].summary.startsWith('Buen sonido'), JSON.stringify(r[0]));
+    const r = (await docs('lessons')).find((x) => x.id === l.id);
+    expect(r.status === 'completed' && r.plan.startsWith('Flexibilidad') && r.summary.startsWith('Buen sonido') && r.completed_at, JSON.stringify(r));
     await page.goto(`${base}/alumnos/${students['Hugo']}?tab=historial`);
     await page.getByText('Buen sonido en el registro agudo').waitFor();
   });
@@ -277,14 +289,16 @@ export async function run({ browser, base, shots, dbUrl }) {
     await toast('Anotación guardada');
     await page.getByRole('button', { name: 'Marcar conseguido' }).click();
     await page.waitForTimeout(400);
-    const r = await one(`select (select status from goals limit 1) g, (select kind from progress_notes limit 1) k`);
-    expect(r[0].g === 'achieved' && r[0].k === 'difficulty', JSON.stringify(r[0]));
+    const [g] = await docs('goals');
+    const [n] = await docs('notes');
+    expect(g?.status === 'achieved' && n?.kind === 'difficulty', JSON.stringify({ g, n }));
     await page.goto(`${base}/seguimiento`);
     await page.getByRole('link', { name: /Hugo García/ }).waitFor();
   });
 
   await step('buscador global (⌘K)', async () => {
     await page.goto(base + '/');
+    await page.getByRole('heading', { name: /Pedro/ }).waitFor();
     await page.keyboard.press('Control+k');
     const input = page.getByRole('dialog', { name: 'Buscar' }).getByRole('textbox');
     await input.fill('hugo');
@@ -329,8 +343,8 @@ export async function run({ browser, base, shots, dbUrl }) {
     await page.getByRole('dialog').getByText(/Se eliminará para todos/).waitFor();
     await page.getByRole('dialog').getByRole('button', { name: 'Eliminar' }).click();
     await toast('Tarea eliminada');
-    const r = await one(`select count(*)::int n from tasks where week_start = $1 and title = 'Dictado musical'`, [key(nextMonday)]);
-    expect(r[0].n === 0, 'la tarea sigue existiendo');
+    const left = (await docs('tasks')).filter((t) => t.week_start === key(nextMonday) && t.title === 'Dictado musical');
+    expect(left.length === 0, 'la tarea sigue existiendo');
   });
 
   await step('ajustes: tema oscuro y categorías', async () => {
@@ -388,7 +402,7 @@ export async function run({ browser, base, shots, dbUrl }) {
 
   await step('móvil (iPhone): navegación inferior y vistas', async () => {
     const { devices } = await import('node:module').then((m) => m.createRequire(import.meta.url)('playwright'));
-    const mctx = await browser.newContext({ ...devices['iPhone 14'], timezoneId: 'Europe/Madrid', storageState: await ctx.storageState() });
+    const mctx = await browser.newContext({ ...devices['iPhone 14'], timezoneId: 'Europe/Madrid', storageState: await ctx.storageState({ indexedDB: true }) });
     const m = await mctx.newPage();
     m.on('pageerror', (e) => errors.push(`móvil pageerror: ${e.message}`));
     await m.goto(base + '/');
@@ -418,7 +432,7 @@ export async function run({ browser, base, shots, dbUrl }) {
 
   await step('tablet (iPad): agenda semanal', async () => {
     const { devices } = await import('node:module').then((m) => m.createRequire(import.meta.url)('playwright'));
-    const tctx = await browser.newContext({ ...devices['iPad Pro 11'], timezoneId: 'Europe/Madrid', storageState: await ctx.storageState() });
+    const tctx = await browser.newContext({ ...devices['iPad Pro 11'], timezoneId: 'Europe/Madrid', storageState: await ctx.storageState({ indexedDB: true }) });
     const t = await tctx.newPage();
     await t.goto(`${base}/agenda?vista=semana&fecha=${key(nextMonday)}`);
     await t.locator('[role=button][aria-label^="Hugo García"]').first().waitFor();
@@ -443,7 +457,6 @@ export async function run({ browser, base, shots, dbUrl }) {
     console.log('  ✗ errores en la consola del navegador:\n      ' + [...new Set(relevant)].slice(0, 10).join('\n      '));
   } else console.log('  ✓ sin errores de JavaScript en el navegador');
 
-  await db.end();
   console.log(failed ? `\n${failed} pasos fallidos` : '\nTodo correcto');
   return failed;
 }

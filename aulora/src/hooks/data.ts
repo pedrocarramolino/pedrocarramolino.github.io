@@ -37,7 +37,7 @@ export const qk = {
 /** Grupos de claves a refrescar tras cada tipo de cambio. */
 export const affects = {
   students: ['students', 'members', 'activity', 'tasks-week', 'tasks-weeks', 'pending-assignments'],
-  groups: ['groups', 'members', 'activity'],
+  groups: ['groups', 'students', 'activity'],
   lessons: ['lessons', 'lesson', 'lessons-for', 'activity'],
   tasks: ['tasks-week', 'tasks-weeks', 'tasks-student', 'tasks-group', 'pending-assignments', 'activity', 'copies', 'search', 'palette'],
   progress: ['notes', 'goals', 'activity', 'all-goals', 'all-notes'],
@@ -78,7 +78,6 @@ export const useProfile = () => useQuery({ queryKey: qk.profile, queryFn: profil
 export const useCategories = () => useQuery({ queryKey: qk.categories, queryFn: categoryApi.list, staleTime: 5 * 60_000 });
 export const useStudents = () => useQuery({ queryKey: qk.students, queryFn: studentApi.list });
 export const useGroups = () => useQuery({ queryKey: qk.groups, queryFn: groupApi.list });
-export const useMembers = () => useQuery({ queryKey: qk.members, queryFn: groupApi.members });
 export const useLessonsRange = (from: string, to: string) =>
   useQuery({ queryKey: qk.lessons(from, to), queryFn: () => lessonApi.range(from, to), placeholderData: (prev) => prev });
 export const useLesson = (id: string) => useQuery({ queryKey: qk.lesson(id), queryFn: () => lessonApi.get(id) });
@@ -108,7 +107,6 @@ export function studentName(s: Pick<Student, 'first_name' | 'last_name'> | undef
 export function useLookup() {
   const students = useStudents();
   const groups = useGroups();
-  const members = useMembers();
   const categories = useCategories();
 
   return useMemo(() => {
@@ -117,9 +115,12 @@ export function useLookup() {
     const categoryById = new Map<string, Category>((categories.data ?? []).map((c) => [c.id, c]));
     const membersOf = new Map<string, string[]>();
     const groupsOf = new Map<string, string[]>();
-    for (const m of members.data ?? []) {
-      membersOf.set(m.group_id, [...(membersOf.get(m.group_id) ?? []), m.student_id]);
-      groupsOf.set(m.student_id, [...(groupsOf.get(m.student_id) ?? []), m.group_id]);
+    // pertenencias guardadas en cada alumno (group_ids)
+    for (const s of students.data ?? []) {
+      for (const gid of s.group_ids ?? []) {
+        membersOf.set(gid, [...(membersOf.get(gid) ?? []), s.id]);
+        groupsOf.set(s.id, [...(groupsOf.get(s.id) ?? []), gid]);
+      }
     }
     const targetName = (t: { student_id?: string | null; group_id?: string | null }) =>
       t.group_id ? (groupById.get(t.group_id)?.name ?? 'Grupo eliminado') : studentName(studentById.get(t.student_id ?? ''));
@@ -138,10 +139,10 @@ export function useLookup() {
       groupsOf: (sid: string) => groupsOf.get(sid) ?? [],
       targetName,
       targetColor,
-      loading: students.isPending || groups.isPending || members.isPending || categories.isPending,
-      error: students.error || groups.error || members.error || categories.error,
+      loading: students.isPending || groups.isPending || categories.isPending,
+      error: students.error || groups.error || categories.error,
     };
-  }, [students.data, groups.data, members.data, categories.data, students.isPending, groups.isPending, members.isPending, categories.isPending, students.error, groups.error, members.error, categories.error]);
+  }, [students.data, groups.data, categories.data, students.isPending, groups.isPending, categories.isPending, students.error, groups.error, categories.error]);
 }
 
 export type Lookup = ReturnType<typeof useLookup>;

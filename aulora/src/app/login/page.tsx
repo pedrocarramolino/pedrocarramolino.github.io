@@ -1,22 +1,33 @@
 'use client';
-import { Suspense, useState } from 'react';
+import { Suspense, useEffect, useState } from 'react';
 import { useSearchParams } from 'next/navigation';
 import { ArrowRight, MailCheck } from 'lucide-react';
-import { supabase } from '@/lib/supabase/client';
+import { createUserWithEmailAndPassword, sendPasswordResetEmail, signInWithEmailAndPassword, updateProfile } from 'firebase/auth';
+import { firebaseAuth } from '@/lib/firebase';
+import { profileApi } from '@/services/api';
+import { useAuth } from '@/components/layout/auth';
 import { Button, LabeledInput } from '@/components/ui/controls';
 import { Logo } from '@/components/layout/Logo';
 
 type Mode = 'signin' | 'signup' | 'reset';
 
-function translate(msg: string) {
-  if (/Invalid login credentials/i.test(msg)) return 'Correo o contraseña incorrectos.';
-  if (/Email not confirmed/i.test(msg)) return 'Confirma tu correo antes de entrar: revisa tu bandeja de entrada.';
-  if (/already registered|already exists/i.test(msg)) return 'Ya existe una cuenta con ese correo. Inicia sesión.';
-  if (/at least 6|weak/i.test(msg)) return 'La contraseña debe tener al menos 6 caracteres.';
-  if (/signups not allowed|Signups not allowed/i.test(msg)) return 'El registro de nuevas cuentas está desactivado.';
-  if (/rate limit/i.test(msg)) return 'Demasiados intentos. Espera unos minutos.';
-  if (/fetch/i.test(msg)) return 'No hay conexión con el servidor.';
-  return msg;
+/** Mensajes de Firebase Auth en español. */
+function translate(e: unknown) {
+  const code = (e as { code?: string })?.code ?? '';
+  const map: Record<string, string> = {
+    'auth/invalid-credential': 'Correo o contraseña incorrectos.',
+    'auth/wrong-password': 'Correo o contraseña incorrectos.',
+    'auth/user-not-found': 'Correo o contraseña incorrectos.',
+    'auth/invalid-email': 'El correo no es válido.',
+    'auth/email-already-in-use': 'Ya existe una cuenta con ese correo. Inicia sesión.',
+    'auth/weak-password': 'La contraseña debe tener al menos 6 caracteres.',
+    'auth/too-many-requests': 'Demasiados intentos. Espera unos minutos.',
+    'auth/network-request-failed': 'No hay conexión con el servidor.',
+    'auth/operation-not-allowed': 'El registro de nuevas cuentas está desactivado.',
+    'auth/admin-restricted-operation': 'El registro de nuevas cuentas está desactivado.',
+    'auth/user-disabled': 'Esta cuenta está desactivada.',
+  };
+  return map[code] ?? ((e as Error)?.message || 'No se pudo completar la operación.');
 }
 
 function LoginForm() {
@@ -26,47 +37,47 @@ function LoginForm() {
   const [password, setPassword] = useState('');
   const [name, setName] = useState('');
   const [loading, setLoading] = useState(false);
-  const [error, setError] = useState<string | null>(params.get('error') === 'enlace' ? 'El enlace no es válido o ha caducado.' : null);
+  const [error, setError] = useState<string | null>(null);
   const [sent, setSent] = useState<string | null>(null);
 
+  const { user, loading: authLoading } = useAuth();
   const next = (() => {
     const n = params.get('next');
     return n && n.startsWith('/') && !n.startsWith('//') ? n : '/';
   })();
-  const origin = typeof window !== 'undefined' ? (process.env.NEXT_PUBLIC_SITE_URL || window.location.origin) : '';
+
+  // con sesión ya iniciada, directamente a la app
+  useEffect(() => {
+    if (!authLoading && user && !loading) window.location.replace(next);
+  }, [authLoading, user, next, loading]);
 
   const submit = async (e: React.FormEvent) => {
     e.preventDefault();
     setError(null);
     setLoading(true);
     try {
-      const auth = supabase().auth;
+      const auth = firebaseAuth();
       if (mode === 'signin') {
-        const { error } = await auth.signInWithPassword({ email: email.trim(), password });
-        if (error) throw error;
+        await signInWithEmailAndPassword(auth, email.trim(), password);
         window.location.assign(next);
         return;
       }
       if (mode === 'signup') {
-        const { data, error } = await auth.signUp({
-          email: email.trim(),
-          password,
-          options: { data: { display_name: name.trim() }, emailRedirectTo: `${origin}/auth/callback` },
-        });
-        if (error) throw error;
-        if (data.session) {
-          window.location.assign('/');
-          return;
-        }
-        setSent('Te hemos enviado un correo para confirmar tu cuenta. Ábrelo desde este dispositivo y volverás a Aulora.');
+        const cred = await createUserWithEmailAndPassword(auth, email.trim(), password);
+        const display = name.trim() || email.trim().split('@')[0];
+        await updateProfile(cred.user, { displayName: display });
+        // el perfil puede haberse creado ya al detectar la sesión: fija el nombre elegido
+        await profileApi.ensure(display);
+        await profileApi.update(cred.user.uid, { display_name: display });
+        window.location.assign(next);
+        return;
       }
       if (mode === 'reset') {
-        const { error } = await auth.resetPasswordForEmail(email.trim(), { redirectTo: `${origin}/auth/callback?next=/ajustes?recuperar=1` });
-        if (error) throw error;
+        await sendPasswordResetEmail(auth, email.trim());
         setSent('Si existe una cuenta con ese correo, recibirás un enlace para elegir una nueva contraseña.');
       }
     } catch (err) {
-      setError(translate((err as Error).message));
+      setError(translate(err));
     } finally {
       setLoading(false);
     }

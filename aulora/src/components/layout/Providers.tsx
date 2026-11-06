@@ -5,6 +5,7 @@ import { Toaster } from 'sonner';
 import { ConfirmProvider } from '@/components/ui/overlay';
 import { UiProvider } from './ui-store';
 import { useTheme } from './theme';
+import { AuthProvider } from './auth';
 
 export function Providers({ children }: { children: React.ReactNode }) {
   const [client] = useState(
@@ -19,9 +20,11 @@ export function Providers({ children }: { children: React.ReactNode }) {
   const { resolved } = useTheme();
   return (
     <QueryClientProvider client={client}>
-      <ConfirmProvider>
-        <UiProvider>{children}</UiProvider>
-      </ConfirmProvider>
+      <AuthProvider>
+        <ConfirmProvider>
+          <UiProvider>{children}</UiProvider>
+        </ConfirmProvider>
+      </AuthProvider>
       <Toaster
         position="bottom-center"
         theme={resolved}
