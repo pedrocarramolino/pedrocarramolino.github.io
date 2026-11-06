@@ -74,7 +74,8 @@ Decisiones clave:
 - **La seguridad está en el servidor.** Las reglas de Firestore solo permiten a cada usuario autenticado leer y escribir dentro de `users/{suUid}` y además validan los campos esenciales. Todo lo demás está cerrado.
 - **Las operaciones de varios documentos son atómicas.** Por ejemplo, borrar un alumno elimina también sus clases, anotaciones, objetivos y asignaciones en lotes.
 - Las fotos se guardan como miniaturas JPEG de unos 10 KB dentro del documento del alumno, así que no hace falta configurar Storage.
-- Firestore guarda una caché local (IndexedDB) para que la app abra al instante. La fuente de verdad es siempre el servidor. `localStorage` solo se usa para la preferencia de tema.
+- **Guardado instantáneo.** Los cambios se guardan primero en el dispositivo (caché persistente de Firestore en IndexedDB) y se muestran al momento en todas las pantallas. Firebase los sincroniza en segundo plano y, si el servidor rechazara alguno, la app avisa y recarga los datos. Las fichas nuevas se precargan mientras se rellena el formulario. La fuente de verdad es siempre el servidor. `localStorage` solo se usa para la preferencia de tema.
+- Las series recurrentes se guardan en una sola escritura. Su aviso de conflictos, que revisa meses de agenda, aparece justo después de guardar, con la opción «Deshacer serie». Las clases sueltas avisan antes de guardar.
 
 ---
 
@@ -151,7 +152,7 @@ Las pruebas usan los **emuladores oficiales de Firebase** (necesitan Java 11 o s
 ```bash
 npm test                        # Pruebas unitarias (recurrencia, conflictos, fechas, estados)
 npm run rules:test              # Reglas de seguridad de Firestore (9 casos)
-npm run e2e:build && npm run e2e  # 31 escenarios E2E con Playwright (escritorio, iPhone, iPad)
+npm run e2e:build && npm run e2e  # 32 escenarios E2E con Playwright (escritorio, iPhone, iPad)
 ```
 
 `npm run e2e:build` compila la app con la configuración de `.env.e2e` (proyecto de demostración `demo-aulora` y emuladores) sin tocar tu `.env.local`.

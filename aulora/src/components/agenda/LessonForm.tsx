@@ -5,7 +5,8 @@ import { addDays, differenceInCalendarDays } from 'date-fns';
 import { Dialog } from '@/components/ui/overlay';
 import { Button, Checkbox, Field, LabeledInput, NumberInput, Segmented, Select, Textarea, rangeError } from '@/components/ui/controls';
 import { WeekdayPicker } from '@/components/ui/pickers';
-import { studentName, useAction, useLookup, useProfile } from '@/hooks/data';
+import { studentName, useAction, useInvalidate, useLookup, useProfile } from '@/hooks/data';
+import { toast } from 'sonner';
 import { lessonApi, seriesApi, type LessonInput } from '@/services/api';
 import { LESSON_STATUS, LESSON_TYPES } from '@/lib/labels';
 import { generateOccurrences } from '@/lib/recurrence';
@@ -16,6 +17,8 @@ import type { LessonDraft } from '@/components/layout/ui-store';
 
 type Scope = 'one' | 'following';
 
+const clases = (n: number) => (n === 1 ? '1 clase' : `${n} clases`);
+
 function defaultEnd(start: Date) {
   // fin de curso: 30 de junio siguiente (o del mismo año si aún no ha llegado)
   const y = start.getMonth() >= 6 ? start.getFullYear() + 1 : start.getFullYear();
@@ -25,6 +28,7 @@ function defaultEnd(start: Date) {
 export function LessonForm({ draft, onClose }: { draft: LessonDraft; onClose: () => void }) {
   const lookup = useLookup();
   const profile = useProfile();
+  const invalidate = useInvalidate();
   const existing = draft.lesson;
   const editing = !!existing;
   const startDate = existing ? new Date(existing.starts_at) : (draft.start ?? roundedNow());
@@ -65,6 +69,34 @@ export function LessonForm({ draft, onClose }: { draft: LessonDraft; onClose: ()
   const changeDate = (v: string) => {
     if (v && date && weekdays.length === 1 && weekdays[0] === isoWeekday(fromDateKey(date))) setWeekdays([isoWeekday(fromDateKey(v))]);
     setDate(v);
+  };
+
+  const warnSeriesConflicts = async (created: Lesson[], seriesId: string) => {
+    try {
+      const found = await detectConflicts(
+        created.map((l) => ({ start: new Date(l.starts_at), end: new Date(l.ends_at) })),
+        new Set(created.map((l) => l.id)),
+      );
+      if (!found.length) return;
+      toast.warning(found.length === 1 ? '1 sesión coincide con otra clase' : `${found.length} sesiones coinciden con otras clases`, {
+        description: found
+          .slice(0, 3)
+          .map((c) => `${fmt(c.start, "EEE d MMM, HH:mm")} con ${c.with.map((l) => lookup.targetName(l)).join(', ')}`)
+          .join(' · ') + (found.length > 3 ? ' …' : ''),
+        duration: 15000,
+        action: {
+          label: 'Deshacer serie',
+          onClick: async () => {
+            await lessonApi.removeMany(created.map((l) => l.id));
+            await seriesApi.remove(seriesId);
+            void invalidate('lessons');
+            toast.success('Serie deshecha');
+          },
+        },
+      });
+    } catch {
+      // sin conexión: no se puede comprobar ahora
+    }
   };
 
   const pickStudent = (id: string) => {
@@ -151,27 +183,23 @@ export function LessonForm({ draft, onClose }: { draft: LessonDraft; onClose: ()
       // ---- Nueva serie recurrente
       if (recurring) {
         if (!occurrences.length) throw new Error('La serie no genera ninguna sesión. Revisa los días y las fechas.');
-        if (!force) {
-          const found = await detectConflicts(occurrences.map((s) => ({ start: s, end: new Date(s.getTime() + minutes * 60_000) })));
-          if (found.length) return { conflicts: found };
-        }
-        const series = await seriesApi.create({
-          ...target,
-          lesson_type: type,
-          weekdays,
-          start_time: time,
-          duration_minutes: minutes,
-          start_date: date,
-          end_date: endDate,
-          location: location.trim(),
-        });
-        try {
-          await lessonApi.createMany(occurrences.map((s) => ({ ...base, series_id: series.id, starts_at: s.toISOString() })));
-        } catch (e) {
-          await seriesApi.remove(series.id).catch(() => {});
-          throw e;
-        }
-        return { message: `Serie creada: ${occurrences.length} clases` };
+        const { seriesId, lessons } = await lessonApi.createSeries(
+          {
+            ...target,
+            lesson_type: type,
+            weekdays,
+            start_time: time,
+            duration_minutes: minutes,
+            start_date: date,
+            end_date: endDate,
+            location: location.trim(),
+          },
+          occurrences.map((s) => ({ ...base, starts_at: s.toISOString() })),
+        );
+        // la serie abarca meses: los conflictos se comprueban justo después de guardar
+        // (sin hacer esperar) y se avisa con opción de deshacer
+        if (!force) void warnSeriesConflicts(lessons, seriesId);
+        return { message: `Serie creada: ${clases(occurrences.length)}` };
       }
 
       // ---- Nueva clase suelta
@@ -232,7 +260,7 @@ export function LessonForm({ draft, onClose }: { draft: LessonDraft; onClose: ()
               Cancelar
             </Button>
             <Button variant="primary" onClick={() => submit(false)} loading={save.isPending}>
-              {editing ? 'Guardar' : recurring ? `Crear ${occurrences.length} clases` : 'Programar clase'}
+              {editing ? 'Guardar' : recurring ? `Crear ${clases(occurrences.length)}` : 'Programar clase'}
             </Button>
           </>
         )
@@ -351,7 +379,7 @@ export function LessonForm({ draft, onClose }: { draft: LessonDraft; onClose: ()
                 <div className="grid grid-cols-2 gap-3">
                   <LabeledInput label="Hasta el" type="date" value={endDate} min={date} onChange={(e) => setEndDate(e.target.value)} />
                   <div className="flex items-end pb-2 text-sm text-muted">
-                    {occurrences.length ? `Se crearán ${occurrences.length} clases` : 'Sin sesiones'}
+                    {occurrences.length ? (occurrences.length === 1 ? 'Se creará 1 clase' : `Se crearán ${occurrences.length} clases`) : 'Sin sesiones'}
                   </div>
                 </div>
                 <p className="text-xs text-muted">Cada sesión se guarda por separado: podrás modificar o cancelar una sin afectar al resto.</p>

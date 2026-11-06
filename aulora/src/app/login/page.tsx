@@ -3,7 +3,7 @@ import { Suspense, useEffect, useRef, useState } from 'react';
 import { useSearchParams } from 'next/navigation';
 import { ArrowRight, MailCheck } from 'lucide-react';
 import { createUserWithEmailAndPassword, sendPasswordResetEmail, signInWithEmailAndPassword, updateProfile } from 'firebase/auth';
-import { firebaseAuth } from '@/lib/firebase';
+import { firebaseAuth, flushWrites } from '@/lib/firebase';
 import { profileApi } from '@/services/api';
 import { useAuth } from '@/components/layout/auth';
 import { Button, LabeledInput } from '@/components/ui/controls';
@@ -91,6 +91,7 @@ function LoginForm() {
         // el perfil puede haberse creado ya al detectar la sesión: fija el nombre elegido
         await profileApi.ensure(display);
         await profileApi.update(cred.user.uid, { display_name: display });
+        await flushWrites();
         go(next);
         return;
       }

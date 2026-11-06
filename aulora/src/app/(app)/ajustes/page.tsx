@@ -14,7 +14,7 @@ import { useTheme, type ThemePref } from '@/components/layout/theme';
 import { useAction, useCategories, useProfile } from '@/hooks/data';
 import { categoryApi, exportAll, profileApi } from '@/services/api';
 import { EmailAuthProvider, reauthenticateWithCredential, signOut, updatePassword } from 'firebase/auth';
-import { firebaseAuth } from '@/lib/firebase';
+import { firebaseAuth, flushWrites } from '@/lib/firebase';
 import { useAuth } from '@/components/layout/auth';
 import { COLORS, cvar } from '@/lib/colors';
 import type { Category } from '@/lib/types';
@@ -61,6 +61,7 @@ function SettingsPage() {
               <ExportButton />
               <Button
                 onClick={async () => {
+                  await flushWrites();
                   await signOut(firebaseAuth());
                   window.location.assign('/login');
                 }}
