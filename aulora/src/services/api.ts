@@ -88,6 +88,36 @@ async function safe<T>(fn: () => Promise<T>): Promise<T> {
 }
 
 // ------------------------------------------------------------------ utilidades
+/** Límite para esperar al servidor: así ninguna acción se queda colgada sin conexión. */
+const SERVER_TIMEOUT_MS = 6000;
+function withTimeout<T>(p: Promise<T>, ms = SERVER_TIMEOUT_MS): Promise<T> {
+  return new Promise<T>((resolve, reject) => {
+    const t = setTimeout(() => reject(new ApiError('Sin respuesta de la nube. Comprueba tu conexión e inténtalo de nuevo.', 'deadline-exceeded')), ms);
+    p.then(
+      (v) => {
+        clearTimeout(t);
+        resolve(v);
+      },
+      (e) => {
+        clearTimeout(t);
+        reject(e);
+      },
+    );
+  });
+}
+/** Consulta que necesita al servidor (borrados en cascada): con límite de tiempo y sin caché. */
+const getDocsStrict = (q: Query<DocumentData>) => withTimeout(getDocs(q));
+/** Consulta al servidor con límite de tiempo; si no responde, usa lo que haya en el dispositivo. */
+async function getDocsSafe(q: Query<DocumentData>) {
+  try {
+    return await withTimeout(getDocs(q));
+  } catch (e) {
+    const cached = await getDocsFromCache(q).catch(() => null);
+    if (cached) return cached;
+    throw e;
+  }
+}
+
 function uid(): string {
   const u = firebaseAuth().currentUser;
   if (!u) throw new ApiError('Tu sesión ha caducado. Vuelve a iniciar sesión.', 'unauthenticated');
@@ -104,7 +134,7 @@ function withId<T>(id: string, data: DocumentData): T {
   return { ...data, id, owner_id: uid() } as T;
 }
 async function list<T>(q: Query<DocumentData>): Promise<T[]> {
-  const snap = await getDocs(q);
+  const snap = await getDocsSafe(q);
   return snap.docs.map((d) => withId<T>(d.id, d.data()));
 }
 const all = <T>(c: Coll, ...cs: QueryConstraint[]) => list<T>(query(col(c), ...cs));
@@ -198,7 +228,7 @@ async function readDoc(r: ReturnType<typeof doc>) {
   } catch {
     // no está en caché
   }
-  return getDoc(r);
+  return withTimeout(getDoc(r));
 }
 
 const fullName = (s: Pick<Student, 'first_name' | 'last_name'>) => [s.first_name, s.last_name].filter(Boolean).join(' ');
@@ -214,6 +244,8 @@ const DEFAULT_CATEGORIES: [string, string][] = [
   ['Otros', 'slate'],
 ];
 
+let ensuring: Promise<boolean> | null = null;
+
 export const profileApi = {
   get: () =>
     safe(async () => {
@@ -228,17 +260,28 @@ export const profileApi = {
       // caso habitual: el perfil ya está en la caché del dispositivo, no hace falta ir al servidor
       const cached = await getDocFromCache(pref).catch(() => null);
       if (cached?.exists()) return false;
-      const created = await runTransaction(db(), async (tx) => {
-        const snap = await tx.get(pref);
-        if (snap.exists()) return false;
-        tx.set(pref, { display_name: displayName, default_lesson_minutes: 60, day_start_hour: 8, day_end_hour: 22, created_at: now() });
-        return true;
+      // una sola comprobación a la vez (registro y arranque de la app la piden a la vez)
+      ensuring ??= (async () => {
+        const created = await runTransaction(db(), async (tx) => {
+          const snap = await tx.get(pref);
+          if (snap.exists()) return false;
+          tx.set(pref, { display_name: displayName, default_lesson_minutes: 60, day_start_hour: 8, day_end_hour: 22, created_at: now() });
+          return true;
+        }).catch((e) => {
+          // si otra petición ya lo creó, no es un error
+          if ((e as { code?: string })?.code === 'already-exists') return false;
+          throw e;
+        });
+        if (created) {
+          const b = new Batcher();
+          DEFAULT_CATEGORIES.forEach(([name, color], i) => b.set(doc(col('categories')), { name, color, sort_order: i + 1, created_at: now() }));
+          await b.commitAndWait();
+        }
+        return created;
+      })().finally(() => {
+        ensuring = null;
       });
-      if (created) {
-        const b = new Batcher();
-        DEFAULT_CATEGORIES.forEach(([name, color], i) => b.set(doc(col('categories')), { name, color, sort_order: i + 1, created_at: now() }));
-        await b.commitAndWait();
-      }
+      const created = await ensuring;
       return created;
     }),
   update: (id: string, patch: Partial<Profile>) =>
@@ -283,7 +326,7 @@ export const categoryApi = {
     safe(async () => {
       const b = new Batcher();
       for (const c of ['tasks', 'goals', 'notes'] as const) {
-        const snap = await getDocs(query(col(c), where('category_id', '==', id)));
+        const snap = await getDocsStrict(query(col(c), where('category_id', '==', id)));
         snap.docs.forEach((d) => b.update(d.ref, { category_id: null }));
       }
       b.delete(ref('categories', id));
@@ -314,7 +357,7 @@ export const studentApi = {
   list: () => safe(async () => (await all<Student>('students')).map((s) => ({ ...s, group_ids: s.group_ids ?? [] })).sort((a, b) => fullName(a).localeCompare(fullName(b), 'es'))),
   get: (id: string) =>
     safe(async () => {
-      const snap = await getDoc(ref('students', id));
+      const snap = await withTimeout(getDoc(ref('students', id)));
       if (!snap.exists()) throw new ApiError('Alumno no encontrado', 'not-found');
       return withId<Student>(id, snap.data());
     }),
@@ -350,9 +393,9 @@ export const studentApi = {
       const cur = (await readDoc(ref('students', id))).data();
       const b = new Batcher();
       for (const c of ['lessons', 'series', 'notes', 'goals'] as const) {
-        (await getDocs(query(col(c), where('student_id', '==', id)))).docs.forEach((d) => b.delete(d.ref));
+        (await getDocsStrict(query(col(c), where('student_id', '==', id)))).docs.forEach((d) => b.delete(d.ref));
       }
-      const tasks = await getDocs(query(col('tasks'), where('student_ids', 'array-contains', id)));
+      const tasks = await getDocsStrict(query(col('tasks'), where('student_ids', 'array-contains', id)));
       for (const d of tasks.docs) {
         const t = d.data() as Task & { assignments: Record<string, unknown>; student_ids: string[] };
         if (!t.group_id && t.student_ids.length <= 1) b.delete(d.ref);
@@ -416,9 +459,9 @@ export const groupApi = {
       const cur = (await readDoc(ref('groups', id))).data();
       const b = new Batcher();
       for (const c of ['lessons', 'series', 'tasks'] as const) {
-        (await getDocs(query(col(c), where('group_id', '==', id)))).docs.forEach((d) => b.delete(d.ref));
+        (await getDocsStrict(query(col(c), where('group_id', '==', id)))).docs.forEach((d) => b.delete(d.ref));
       }
-      (await getDocs(query(col('students'), where('group_ids', 'array-contains', id)))).docs.forEach((d) => b.update(d.ref, { group_ids: arrayRemove(id) }));
+      (await getDocsStrict(query(col('students'), where('group_ids', 'array-contains', id)))).docs.forEach((d) => b.update(d.ref, { group_ids: arrayRemove(id) }));
       b.delete(ref('groups', id));
       b.log('groups', 'deleted', String(cur?.name ?? ''), id);
       b.commitInBackground();
@@ -477,7 +520,7 @@ export const lessonApi = {
     safe(() => all<Lesson>('lessons', where('starts_at', '>=', new Date(fromIso).toISOString()), where('starts_at', '<', new Date(toIso).toISOString()), orderBy('starts_at'))),
   get: (id: string) =>
     safe(async () => {
-      const snap = await getDoc(ref('lessons', id));
+      const snap = await withTimeout(getDoc(ref('lessons', id)));
       if (!snap.exists()) throw new ApiError('Clase no encontrada', 'not-found');
       return withId<Lesson>(id, snap.data());
     }),
@@ -588,7 +631,7 @@ export const seriesApi = {
     }),
   get: (id: string) =>
     safe(async () => {
-      const snap = await getDoc(ref('series', id));
+      const snap = await withTimeout(getDoc(ref('series', id)));
       if (!snap.exists()) throw new ApiError('Serie no encontrada', 'not-found');
       return withId<LessonSeries>(id, snap.data());
     }),
@@ -675,7 +718,7 @@ function toTask(id: string, d: DocumentData): TaskWithAssignments {
   };
 }
 async function tasksOf(q: Query<DocumentData>) {
-  const snap = await getDocs(q);
+  const snap = await getDocsSafe(q);
   return snap.docs.map((d) => toTask(d.id, d.data()));
 }
 const byWeekThenCreated = (a: Task, b: Task) => a.week_start.localeCompare(b.week_start) || a.created_at.localeCompare(b.created_at);
@@ -684,7 +727,7 @@ const byWeekThenCreated = (a: Task, b: Task) => a.week_start.localeCompare(b.wee
 async function groupMemberIds(groupId: string) {
   const q = query(col('students'), where('group_ids', 'array-contains', groupId));
   let snap = await getDocsFromCache(q).catch(() => null);
-  if (!snap || snap.empty) snap = await getDocs(q);
+  if (!snap || snap.empty) snap = await getDocsSafe(q);
   return snap.docs.filter((d) => d.data().status !== 'archived').map((d) => d.id);
 }
 
@@ -993,7 +1036,7 @@ export const searchApi = {
 export async function exportAll() {
   return safe(async () => {
     const out: Record<string, unknown> = { profile: await profileApi.get() };
-    for (const c of ['categories', 'students', 'groups', 'series', 'lessons', 'tasks', 'notes', 'goals'] as const) out[c] = (await getDocs(col(c))).docs.map((d) => ({ id: d.id, ...d.data() }));
+    for (const c of ['categories', 'students', 'groups', 'series', 'lessons', 'tasks', 'notes', 'goals'] as const) out[c] = (await getDocsSafe(col(c))).docs.map((d) => ({ id: d.id, ...d.data() }));
     return { exported_at: now(), app: 'Aulora', version: 2, data: out };
   });
 }
