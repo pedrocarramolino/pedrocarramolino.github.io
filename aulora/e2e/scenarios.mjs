@@ -583,6 +583,21 @@ export async function run({ browser, base, shots, admin }) {
     await m.evaluate(() => window.__auloraFlush?.());
     const hugo = (await docs('students')).find((x) => x.first_name === 'Hugo');
     expect(hugo?.level === 'Profesional 2', `nivel en la nube: ${hugo?.level}`);
+    // «Reintentar» activa la conexión compatible, que también sincroniza
+    expect((await m.evaluate(() => localStorage.getItem('aulora-compat-connection'))) === '1', 'debería activarse el modo compatible');
+    await m.goto(base + '/ajustes');
+    await m.getByText('Detalles de la sincronización').click();
+    await m.getByText('Compatible', { exact: true }).waitFor();
+    await m.getByText('Accesible', { exact: true }).waitFor();
+    await m.goto(`${base}/alumnos/${students['Hugo']}`);
+    await m.getByRole('button', { name: 'Más acciones' }).click();
+    await m.getByRole('menuitem', { name: 'Editar ficha' }).click();
+    await m.getByLabel('Nivel musical').fill('Profesional 3');
+    await m.getByRole('button', { name: 'Guardar cambios' }).click();
+    await m.getByRole('dialog').waitFor({ state: 'detached' });
+    await m.evaluate(() => window.__auloraFlush?.());
+    const hugo3 = (await admin.docs(me, 'students')).find((x) => x.first_name === 'Hugo');
+    expect(hugo3?.level === 'Profesional 3', `nivel en la nube (modo compatible): ${hugo3?.level}`);
     await phone.close();
   });
 
