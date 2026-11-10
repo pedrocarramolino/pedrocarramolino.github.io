@@ -60,10 +60,45 @@ export async function flushWrites(timeoutMs = 4000) {
   await Promise.race([waitForPendingWrites(db), new Promise((r) => setTimeout(r, timeoutMs))]).catch(() => {});
 }
 
+/**
+ * Modo de conexión «compatible» (long polling): algunos antivirus, VPN, redes o
+ * extensiones cortan la conexión continua de Firestore y la app nunca llega a la
+ * nube. Al pulsar «Reintentar» se activa este modo y se recuerda en el dispositivo.
+ */
+const COMPAT_KEY = 'aulora-compat-connection';
+export function compatConnection(): boolean {
+  try {
+    return typeof window !== 'undefined' && localStorage.getItem(COMPAT_KEY) === '1';
+  } catch {
+    return false;
+  }
+}
+export function enableCompatConnection() {
+  try {
+    localStorage.setItem(COMPAT_KEY, '1');
+  } catch {}
+}
+
+/** Comprueba si el navegador puede llegar al servidor de datos (o algo lo bloquea). */
+export async function probeDataServer(timeoutMs = 6000): Promise<'ok' | 'blocked' | 'timeout'> {
+  const url = useEmulators ? 'http://127.0.0.1:8080/' : 'https://firestore.googleapis.com/';
+  const ctrl = new AbortController();
+  const t = setTimeout(() => ctrl.abort(), timeoutMs);
+  try {
+    await fetch(url, { mode: 'no-cors', cache: 'no-store', signal: ctrl.signal });
+    return 'ok';
+  } catch {
+    return ctrl.signal.aborted ? 'timeout' : 'blocked';
+  } finally {
+    clearTimeout(t);
+  }
+}
+
 export function firestore(): Firestore {
   if (!db) {
     db = initializeFirestore(firebaseApp(), {
       ignoreUndefinedProperties: true,
+      ...(compatConnection() ? { experimentalForceLongPolling: true } : {}),
       localCache:
         typeof window !== 'undefined' ? persistentLocalCache({ tabManager: persistentMultipleTabManager() }) : memoryLocalCache(),
     });
