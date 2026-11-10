@@ -11,7 +11,7 @@ import { ColorPicker } from '@/components/ui/pickers';
 import { PasswordChecklist, PasswordInput } from '@/components/ui/PasswordInput';
 import { validateNewPassword } from '@/lib/password';
 import { useTheme, type ThemePref } from '@/components/layout/theme';
-import { SyncStatusRow } from '@/components/layout/SyncBanner';
+import { SyncDiagnostics, SyncStatusRow } from '@/components/layout/SyncBanner';
 import { pendingWrites } from '@/lib/sync-status';
 import { useAction, useCategories, useProfile } from '@/hooks/data';
 import { categoryApi, exportAll, profileApi } from '@/services/api';
@@ -58,6 +58,7 @@ function SettingsPage() {
           <CardHeader title="Cuenta y datos" />
           <div className="space-y-4 px-4 pb-4">
             <SyncStatusRow />
+            <SyncDiagnostics />
             <p className="text-sm text-fg-2">
               Sesión iniciada como <strong>{user?.email ?? '…'}</strong>. Tus datos se guardan en la nube (tu proyecto de Firebase), se sincronizan entre tus dispositivos y solo tú puedes acceder a ellos.
             </p>

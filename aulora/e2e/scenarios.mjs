@@ -555,6 +555,37 @@ export async function run({ browser, base, shots, admin }) {
     await phone.close();
   });
 
+  await step('editar sin contacto con la nube: no se cuelga y se recupera con «Reintentar»', async () => {
+    const { devices } = await import('node:module').then((m) => m.createRequire(import.meta.url)('playwright'));
+    const phone = await browser.newContext({ ...devices['iPhone 14'], timezoneId: 'Europe/Madrid', storageState: await ctx.storageState({ indexedDB: true }) });
+    const m = await phone.newPage();
+    await m.goto(`${base}/alumnos/${students['Hugo']}`);
+    await m.getByRole('heading', { name: 'Hugo García' }).waitFor();
+    await m.waitForTimeout(1500);
+    // la conexión con Firestore se queda trabada (el dispositivo cree tener internet)
+    await m.route('**/127.0.0.1:8080/**', (r) => r.abort());
+    await m.getByRole('button', { name: 'Más acciones' }).click();
+    await m.getByRole('menuitem', { name: 'Editar ficha' }).click();
+    await m.getByLabel('Nivel musical').fill('Profesional 2');
+    const t0 = Date.now();
+    await m.getByRole('button', { name: 'Guardar cambios' }).click();
+    await m.getByRole('dialog').waitFor({ state: 'detached', timeout: 8000 });
+    const ms = Date.now() - t0;
+    expect(ms < 3000, `guardar tardó ${ms} ms sin conexión con la nube`);
+    await m.getByText('Profesional 2').first().waitFor();
+    // aviso de cambios atascados con «Reintentar»
+    const banner = m.locator('[data-sync="stalled"]');
+    await banner.waitFor({ timeout: 20_000 });
+    await m.unroute('**/127.0.0.1:8080/**');
+    await banner.getByRole('button', { name: 'Reintentar' }).click();
+    await m.getByRole('heading', { name: 'Hugo García' }).waitFor();
+    await m.locator('[data-sync]').waitFor({ state: 'detached', timeout: 20_000 });
+    await m.evaluate(() => window.__auloraFlush?.());
+    const hugo = (await docs('students')).find((x) => x.first_name === 'Hugo');
+    expect(hugo?.level === 'Profesional 2', `nivel en la nube: ${hugo?.level}`);
+    await phone.close();
+  });
+
   await step('móvil (iPhone): navegación inferior y vistas', async () => {
     const { devices } = await import('node:module').then((m) => m.createRequire(import.meta.url)('playwright'));
     const mctx = await browser.newContext({ ...devices['iPhone 14'], timezoneId: 'Europe/Madrid', storageState: await ctx.storageState({ indexedDB: true }) });
