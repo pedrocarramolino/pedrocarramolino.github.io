@@ -11,6 +11,8 @@ import { ColorPicker } from '@/components/ui/pickers';
 import { PasswordChecklist, PasswordInput } from '@/components/ui/PasswordInput';
 import { validateNewPassword } from '@/lib/password';
 import { useTheme, type ThemePref } from '@/components/layout/theme';
+import { SyncStatusRow } from '@/components/layout/SyncBanner';
+import { pendingWrites } from '@/lib/sync-status';
 import { useAction, useCategories, useProfile } from '@/hooks/data';
 import { categoryApi, exportAll, profileApi } from '@/services/api';
 import { EmailAuthProvider, reauthenticateWithCredential, signOut, updatePassword } from 'firebase/auth';
@@ -24,6 +26,7 @@ function SettingsPage() {
   const profile = useProfile();
   const { pref, setPref } = useTheme();
   const { user } = useAuth();
+  const confirm = useConfirm();
 
   return (
     <div className="max-w-3xl">
@@ -54,14 +57,27 @@ function SettingsPage() {
         <Card>
           <CardHeader title="Cuenta y datos" />
           <div className="space-y-4 px-4 pb-4">
+            <SyncStatusRow />
             <p className="text-sm text-fg-2">
-              Sesión iniciada como <strong>{user?.email ?? '…'}</strong>. Tus datos se guardan en tu proyecto de Firebase y solo tú puedes acceder a ellos.
+              Sesión iniciada como <strong>{user?.email ?? '…'}</strong>. Tus datos se guardan en la nube (tu proyecto de Firebase), se sincronizan entre tus dispositivos y solo tú puedes acceder a ellos.
             </p>
             <div className="flex flex-wrap gap-2">
               <ExportButton />
               <Button
                 onClick={async () => {
                   await flushWrites();
+                  // si quedan cambios sin subir, cerrar sesión podría perderlos
+                  const left = pendingWrites();
+                  if (
+                    left &&
+                    !(await confirm({
+                      title: 'Hay cambios sin guardar en la nube',
+                      description: `${left === 1 ? 'Queda 1 cambio' : `Quedan ${left} cambios`} que todavía no se han subido. Si cierras sesión ahora podrían perderse. Espera a tener conexión o ciérrala igualmente.`,
+                      confirmLabel: 'Cerrar sesión igualmente',
+                      danger: true,
+                    }))
+                  )
+                    return;
                   await signOut(firebaseAuth());
                   window.location.assign('/login');
                 }}

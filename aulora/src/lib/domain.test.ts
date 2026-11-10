@@ -92,3 +92,15 @@ describe('campos numéricos', () => {
     expect(cleanDigits('00090', 3)).toBe('90');
   });
 });
+
+describe('aviso de sincronización', () => {
+  it('reconoce los errores que impiden guardar en la nube', async () => {
+    const { describeSyncError } = await import('./sync-status');
+    expect(describeSyncError({ code: 'not-found', message: 'The database (default) does not exist for project aulora-f71ea' })?.message).toBe(
+      'La base de datos en la nube no existe todavía.',
+    );
+    expect(describeSyncError({ code: 'permission-denied', message: 'Missing or insufficient permissions.' })?.message).toMatch(/reglas de Firestore/);
+    // cortes de red pasajeros no son un error grave (se reintentan solos)
+    expect(describeSyncError({ code: 'unavailable', message: 'offline' })).toBeNull();
+  });
+});

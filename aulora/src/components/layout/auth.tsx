@@ -3,7 +3,9 @@ import { createContext, useContext, useEffect, useRef, useState } from 'react';
 import { usePathname, useRouter } from 'next/navigation';
 import { onAuthStateChanged, type User } from 'firebase/auth';
 import { useQueryClient } from '@tanstack/react-query';
-import { firebaseAuth } from '@/lib/firebase';
+import { firebaseAuth, firestore } from '@/lib/firebase';
+import { waitForPendingWrites } from 'firebase/firestore';
+import { startSyncWatch, trackWrite } from '@/lib/sync-status';
 import { profileApi } from '@/services/api';
 import { LogoMark } from './Logo';
 
@@ -35,6 +37,9 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       if (lastUid.current !== (user?.uid ?? null)) {
         qc.clear();
         lastUid.current = user?.uid ?? null;
+        startSyncWatch();
+        // cambios guardados en sesiones anteriores que aún no han llegado a la nube
+        if (user) trackWrite(waitForPendingWrites(firestore()), { confirmsServer: false });
       }
       // la app se muestra en cuanto se conoce la sesión; el perfil se comprueba en segundo plano
       setState({ user, loading: false, error: null });
