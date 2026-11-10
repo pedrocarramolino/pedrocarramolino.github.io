@@ -41,6 +41,7 @@ import {
   type WriteBatch,
 } from 'firebase/firestore';
 import { firebaseAuth, firestore } from '@/lib/firebase';
+import { trackWrite } from '@/lib/sync-status';
 import { norm } from '@/lib/search';
 import type {
   ActivityEntry,
@@ -162,7 +163,9 @@ class Batcher {
    * plano; si el servidor lo rechaza se notifica mediante syncErrors.
    */
   commitInBackground() {
-    this.commit().catch((e) => syncErrors.dispatchEvent(new CustomEvent('error', { detail: humanize(e) })));
+    const sent = this.commit();
+    trackWrite(sent); // el aviso de sincronización vigila que llegue a la nube
+    sent.catch((e) => syncErrors.dispatchEvent(new CustomEvent('error', { detail: humanize(e) })));
     // la interfaz se actualiza ya, sin esperar al servidor
     const changes = this.changes.filter((c) => c.coll !== 'activity');
     if (changes.length) localChanges.dispatchEvent(new CustomEvent('change', { detail: changes }));

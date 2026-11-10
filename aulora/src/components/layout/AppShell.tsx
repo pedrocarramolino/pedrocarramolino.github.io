@@ -7,6 +7,7 @@ import { Logo, LogoMark } from './Logo';
 import { NAV, isActive } from './nav';
 import { useUi } from './ui-store';
 import { CommandPalette } from './CommandPalette';
+import { SyncBanner } from './SyncBanner';
 import { Button, Kbd } from '@/components/ui/controls';
 import { Dialog, Menu } from '@/components/ui/overlay';
 import { cn } from '@/components/ui/cn';
@@ -165,6 +166,8 @@ export function AppShell({ children }: { children: React.ReactNode }) {
               </div>
             </div>
           </div>
+          {/* aviso de sincronización: dentro de la cabecera fija para que se vea siempre */}
+          <SyncBanner />
         </header>
 
         <main className="mx-auto w-full max-w-[1400px] flex-1 px-4 pt-5 pb-28 md:px-6 md:pt-7 md:pb-12">{children}</main>

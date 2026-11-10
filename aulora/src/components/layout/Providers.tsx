@@ -14,8 +14,10 @@ export function Providers({ children }: { children: React.ReactNode }) {
     () =>
       new QueryClient({
         defaultOptions: {
-          queries: { staleTime: 30_000, retry: 1, refetchOnWindowFocus: true },
-          mutations: { retry: 0 },
+          // Firestore funciona sin conexión (caché y cola de envíos): no hay que pausar
+          // consultas ni acciones cuando el dispositivo está offline
+          queries: { staleTime: 30_000, retry: 1, refetchOnWindowFocus: true, networkMode: 'always' },
+          mutations: { retry: 0, networkMode: 'always' },
         },
       }),
   );

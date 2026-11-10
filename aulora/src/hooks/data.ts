@@ -4,6 +4,7 @@ import { keepPreviousData, useMutation, useQuery, useQueryClient, type QueryClie
 import { toast } from 'sonner';
 import { allLessons, lessonApi, live, type LiveDef } from '@/services/api';
 import { firebaseAuth } from '@/lib/firebase';
+import { reportServerSeen, reportSyncError } from '@/lib/sync-status';
 import type { Category, Group, Lesson, Student } from '@/lib/types';
 
 export const qk = {
@@ -82,12 +83,15 @@ function attach<T>(qc: QueryClient, key: readonly unknown[], def: () => LiveDef<
     try {
       unsub = def().subscribe(
         (data, meta) => {
-          if (!meta.fromCache) markWarm();
+          if (!meta.fromCache) {
+            markWarm();
+            reportServerSeen();
+          }
           // una caché vacía solo se muestra si el dispositivo ya estaba sincronizado
           if (meta.fromCache && meta.empty && !cacheIsWarm()) return;
           qc.setQueryData(key, data);
         },
-        () => {},
+        (e) => reportSyncError(e),
       );
     } catch {
       // sin sesión todavía
@@ -160,7 +164,10 @@ function firstValue<T>(def: () => LiveDef<T>, emptyValue: T): Promise<T> {
           }
           finish(() => resolve(data));
         },
-        (e) => finish(() => reject(e)),
+        (e) => {
+          reportSyncError(e);
+          finish(() => reject(e));
+        },
       );
     } catch (e) {
       finish(() => reject(e));

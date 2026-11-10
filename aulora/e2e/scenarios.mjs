@@ -526,6 +526,35 @@ export async function run({ browser, base, shots, admin }) {
     await phone.close();
   });
 
+  await step('aviso de sincronización: sin conexión y al volver', async () => {
+    const { devices } = await import('node:module').then((m) => m.createRequire(import.meta.url)('playwright'));
+    const phone = await browser.newContext({ ...devices['iPhone 14'], timezoneId: 'Europe/Madrid', storageState: await ctx.storageState({ indexedDB: true }) });
+    const m = await phone.newPage();
+    await m.goto(`${base}/tareas?semana=${week}`);
+    await m.getByText('Estudio nº 4').waitFor();
+    // todo sincronizado: sin aviso
+    expect((await m.locator('[data-sync]').count()) === 0, 'no debería haber aviso con conexión');
+    // sin conexión: aviso y los cambios siguen guardándose en el dispositivo
+    await phone.setOffline(true);
+    await m.locator('[data-sync="offline"]').getByText('Sin conexión').waitFor();
+    const quickAdd = m.getByLabel('Añadir tarea a Hugo…');
+    await quickAdd.fill('Tarea sin conexión');
+    await quickAdd.press('Enter');
+    await m.getByText('Tarea sin conexión').waitFor();
+    await m.locator('[data-sync="offline"]').getByText(/1 cambio pendiente/).waitFor();
+    await m.screenshot({ path: `${shots}/movil-sin-conexion.png` });
+    // vuelve la conexión: el aviso desaparece y la tarea llega a la nube
+    await phone.setOffline(false);
+    await m.locator('[data-sync]').waitFor({ state: 'detached', timeout: 20_000 });
+    await m.evaluate(() => window.__auloraFlush?.());
+    const t = (await docs('tasks')).find((x) => x.title === 'Tarea sin conexión');
+    expect(!!t, 'la tarea creada sin conexión no llegó a la nube');
+    // en Ajustes se ve el estado
+    await m.goto(base + '/ajustes');
+    await m.getByText(/Todo guardado en la nube/).waitFor();
+    await phone.close();
+  });
+
   await step('móvil (iPhone): navegación inferior y vistas', async () => {
     const { devices } = await import('node:module').then((m) => m.createRequire(import.meta.url)('playwright'));
     const mctx = await browser.newContext({ ...devices['iPhone 14'], timezoneId: 'Europe/Madrid', storageState: await ctx.storageState({ indexedDB: true }) });
