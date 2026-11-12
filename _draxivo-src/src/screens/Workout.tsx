@@ -14,6 +14,7 @@ import { ExerciseArt } from '../ui/ExerciseArt';
 import { ReorderList } from '../ui/reorder';
 import { ExercisePicker, useExerciseMap, useStartWorkout, useWorkouts } from './shared';
 import { uid } from '../lib/id';
+import { clearRestNotification, showRestNotification } from '../app/notify';
 
 // ---------- Sonido y vibración del descanso ----------
 let audioCtx: AudioContext | null = null;
@@ -137,6 +138,26 @@ export function WorkoutScreen({ editId }: { editId?: string }) {
       }
     }
   }, [remaining, w, settings.restSound, settings.restVibration]);
+
+  // Notificación del sistema: temporizador exacto, independiente del refresco de pantalla,
+  // para avisar aunque la app esté en segundo plano o con la pantalla bloqueada.
+  const restEndsAt = w?.rest && w.rest.pausedRemainingMs == null ? w.rest.endsAt : null;
+  const restLabel = w?.rest?.label ?? '';
+  useEffect(() => {
+    clearRestNotification();
+    if (!settings.restNotify || restEndsAt == null || editing) return;
+    const ms = restEndsAt - Date.now();
+    if (ms <= 0) return;
+    const t = window.setTimeout(() => {
+      if (document.visibilityState === 'hidden') showRestNotification(restLabel ? `Siguiente serie: ${restLabel}` : 'Vuelve a entrenar.');
+    }, ms);
+    return () => window.clearTimeout(t);
+  }, [restEndsAt, restLabel, settings.restNotify, editing]);
+  useEffect(() => {
+    const onVisible = () => document.visibilityState === 'visible' && clearRestNotification();
+    document.addEventListener('visibilitychange', onVisible);
+    return () => document.removeEventListener('visibilitychange', onVisible);
+  }, []);
 
   // Guardado defensivo al ocultar la página (bloqueo del dispositivo, cambio de app).
   const wRef = useRef(w);

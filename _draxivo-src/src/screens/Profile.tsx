@@ -3,6 +3,7 @@ import { CalendarCheck, CalendarDays, ChartNoAxesColumnIncreasing, ClipboardChec
 import { useSettings, useToast } from '../app/context';
 import { navigate } from '../app/router';
 import { isStandalone } from '../app/pwa';
+import { notifyState, requestNotifyPermission, showRestNotification } from '../app/notify';
 import { applyImport, downloadText, exportBackup, exportCSV, planImport, type ImportPlan } from '../db/backup';
 import { requestPersistentStorage, storageEstimate } from '../db/database';
 import { wipeAllData } from '../db/repo';
@@ -13,6 +14,24 @@ import { Button, Field, IconButton, Input, List, LogoMark, Page, PickerRow, Row,
 
 export function Profile() {
   const { settings: s, update } = useSettings();
+  const toast = useToast();
+  const [perm, setPerm] = useState(notifyState);
+  const toggleNotify = async (on: boolean) => {
+    if (!on) return update({ restNotify: false });
+    const p = notifyState() === 'granted' ? 'granted' : await requestNotifyPermission();
+    setPerm(p);
+    if (p === 'granted') {
+      update({ restNotify: true });
+      showRestNotification('Así te avisaremos cuando termine el descanso.');
+    } else if (p === 'unsupported') toast('Este navegador no admite notificaciones. En iPhone, añade DRAXIVO a la pantalla de inicio.', { tone: 'error' });
+    else toast('Permiso de notificaciones denegado. Actívalo en los ajustes del navegador o del sistema.', { tone: 'error' });
+  };
+  const notifyHint =
+    perm === 'unsupported'
+      ? 'No disponible en este navegador. En iPhone, instala la app en la pantalla de inicio.'
+      : perm === 'denied'
+        ? 'Permiso denegado: actívalo en los ajustes del sistema para DRAXIVO.'
+        : 'Aviso del sistema aunque estés en otra app o con la pantalla bloqueada.';
   const [nameOpen, setNameOpen] = useState(false);
   const [name, setName] = useState(s.name);
   const [daysOpen, setDaysOpen] = useState(false);
@@ -112,6 +131,7 @@ export function Profile() {
           />
           <Toggle checked={s.autoStartRest} onChange={(v) => update({ autoStartRest: v })} label="Iniciar descanso al completar una serie" />
           <Toggle checked={s.restSound} onChange={(v) => update({ restSound: v })} label="Sonido al terminar el descanso" description="Sólo con la app abierta en pantalla." />
+          <Toggle checked={s.restNotify && perm === 'granted'} onChange={toggleNotify} label="Notificación al terminar el descanso" description={notifyHint} />
           <Toggle checked={s.restVibration} onChange={(v) => update({ restVibration: v })} label="Vibración al terminar el descanso" description="No disponible en iPhone (Safari no permite vibrar)." />
         </List>
       </Section>

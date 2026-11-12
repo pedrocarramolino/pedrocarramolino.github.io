@@ -1,7 +1,7 @@
 // Service worker de DRAXIVO. Generado en el build.
-const VERSION = 'mvv3wofz';
+const VERSION = 'mwdcv3og';
 const CACHE = 'draxivo-' + VERSION;
-const PRECACHE = ["./","index.html","manifest.webmanifest","icons/icon.svg","icons/icon-192.png","icons/icon-512.png","icons/apple-touch-icon.png","icons/maskable-512.png","assets/index-B70LuqYY.js","assets/index-DGaDJKY5.css"];
+const PRECACHE = ["./","index.html","manifest.webmanifest","icons/icon.svg","icons/icon-192.png","icons/icon-512.png","icons/apple-touch-icon.png","icons/maskable-512.png","assets/index-B_hB_kLB.js","assets/index-DGaDJKY5.css"];
 
 self.addEventListener('install', (event) => {
   event.waitUntil(caches.open(CACHE).then((c) => c.addAll(PRECACHE)));
@@ -15,6 +15,18 @@ self.addEventListener('activate', (event) => {
 
 self.addEventListener('message', (event) => {
   if (event.data && event.data.type === 'SKIP_WAITING') self.skipWaiting();
+});
+
+self.addEventListener('notificationclick', (event) => {
+  event.notification.close();
+  const url = (event.notification.data && event.notification.data.url) || self.registration.scope;
+  event.waitUntil(
+    self.clients.matchAll({ type: 'window', includeUncontrolled: true }).then((list) => {
+      const own = list.find((c) => c.url.startsWith(self.registration.scope));
+      if (own) return own.focus();
+      return self.clients.openWindow(url);
+    }),
+  );
 });
 
 self.addEventListener('fetch', (event) => {

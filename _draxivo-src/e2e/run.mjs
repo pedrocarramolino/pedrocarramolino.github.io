@@ -352,6 +352,67 @@ await step('Generador: pecho 20 min con mancuernas, editar, sustituir y guardar 
   await page.getByText(/^Pecho · 20 min/).first().waitFor();
 });
 
+await step('Notificación al terminar el descanso con la app en segundo plano', async () => {
+  // Chromium sin interfaz deniega siempre el permiso: se simula concedido y se registran los avisos.
+  await page.addInitScript(() => {
+    window.__notes = [];
+    const record = async (title, opts) => void window.__notes.push({ title, body: opts?.body, tag: opts?.tag });
+    Object.defineProperty(Notification, 'permission', { configurable: true, get: () => 'granted' });
+    Notification.requestPermission = async () => 'granted';
+    ServiceWorkerRegistration.prototype.showNotification = function (t, o) { return record(t, o); };
+    window.__vis = 'visible';
+    Object.defineProperty(document, 'visibilityState', { configurable: true, get: () => window.__vis });
+    Object.defineProperty(document, 'hidden', { configurable: true, get: () => window.__vis === 'hidden' });
+  });
+  await page.reload();
+  await go('/profile');
+  const sw = page.getByRole('switch', { name: /^Notificación al terminar el descanso/ });
+  await sw.scrollIntoViewIfNeeded();
+  await sw.click();
+  await page.waitForFunction(() => window.__notes.length === 1);
+  await page.waitForTimeout(400);
+  assert(await sw.isChecked(), 'el ajuste no quedó activado');
+  await page.reload();
+  assert(await page.getByRole('switch', { name: /^Notificación al terminar el descanso/ }).isChecked(), 'el ajuste no se guardó');
+  await go('/train');
+  await page.getByRole('button', { name: 'Empezar Torso A' }).click();
+  const press = page.locator('section[aria-label="Press de banca con barra"]');
+  await press.getByLabel('Peso serie 1', { exact: true }).fill('60');
+  await press.getByLabel('Repeticiones serie 1', { exact: true }).fill('8');
+  await press.getByLabel('Completar serie 1', { exact: true }).click();
+  // Press y remo forman superserie: el descanso empieza al completar el remo.
+  const remo = page.locator('section[aria-label="Remo con barra"]');
+  await remo.getByLabel('Peso serie 1', { exact: true }).fill('50');
+  await remo.getByLabel('Repeticiones serie 1', { exact: true }).fill('10');
+  await remo.getByLabel('Completar serie 1', { exact: true }).click();
+  await page.getByRole('timer').waitFor();
+  // Acorta el descanso a unos segundos y pasa la app a segundo plano.
+  const left = async () => {
+    const t = await page.getByRole('timer').innerText();
+    const m = t.match(/(\d+):(\d{2})/);
+    return m ? Number(m[1]) * 60 + Number(m[2]) : 0;
+  };
+  while ((await left()) > 20) await page.getByRole('button', { name: 'Restar 15 segundos' }).click();
+  await page.evaluate(() => { window.__vis = 'hidden'; document.dispatchEvent(new Event('visibilitychange')); });
+  await page.waitForFunction(() => window.__notes.length === 1, null, { timeout: 25000 });
+  const n = await page.evaluate(() => window.__notes[0]);
+  assert(n.title === 'Descanso terminado' && /Remo con barra/.test(n.body), 'notificación incorrecta: ' + JSON.stringify(n));
+  // Con la app visible no se envía notificación (ya suenan sonido y vibración).
+  await page.evaluate(() => { window.__vis = 'visible'; document.dispatchEvent(new Event('visibilitychange')); });
+  await press.getByLabel('Peso serie 2', { exact: true }).fill('60');
+  await press.getByLabel('Repeticiones serie 2', { exact: true }).fill('8');
+  await press.getByLabel('Completar serie 2', { exact: true }).click();
+  await remo.getByLabel('Peso serie 2', { exact: true }).fill('50');
+  await remo.getByLabel('Repeticiones serie 2', { exact: true }).fill('10');
+  await remo.getByLabel('Completar serie 2', { exact: true }).click();
+  while ((await left()) > 5) await page.getByRole('button', { name: 'Restar 15 segundos' }).click().catch(() => {});
+  await page.waitForTimeout(7000);
+  assert((await page.evaluate(() => window.__notes.length)) === 1, 'notificó con la app visible');
+  await page.getByRole('button', { name: 'Descartar entrenamiento' }).click();
+  await page.getByRole('alertdialog').getByRole('button', { name: 'Descartar' }).click();
+  await page.getByRole('heading', { name: 'Hoy' }).waitFor();
+});
+
 await step('Ilustraciones: cada ejercicio de la biblioteca tiene la suya', async () => {
   await go('/exercises');
   const rows = await page.locator('.list .row-button').count();
