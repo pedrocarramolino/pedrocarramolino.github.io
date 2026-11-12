@@ -13,7 +13,7 @@ import type {
   WeeklyReview,
   Workout,
 } from './types';
-import { LIBRARY_VERSION, seedExercises } from './seedExercises';
+import { KETTLEBELL_MIGRATION, LIBRARY_VERSION, seedExercises } from './seedExercises';
 
 export const DB_NAME = 'draxivo';
 /** Versión del esquema. Cada incremento debe añadir un paso en `migrate`. */
@@ -133,6 +133,8 @@ async function ensureLibrary(db: IDBPDatabase<DraxivoDB>) {
   for (const ex of seedExercises()) {
     const existing = await store.get(ex.id);
     if (!existing) await store.put(ex);
+    // v3: las kettlebell pasan de «otros» a su propio material (sólo si no se cambió a mano).
+    else if (!existing.custom && existing.equipment === 'otros' && KETTLEBELL_MIGRATION.includes(ex.id)) await store.put({ ...existing, equipment: 'kettlebell' });
   }
   await tx.objectStore('meta').put({ key: 'libraryVersion', value: LIBRARY_VERSION });
   await tx.done;

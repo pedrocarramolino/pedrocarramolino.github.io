@@ -5,30 +5,31 @@ import { memo, useEffect, useState } from 'react';
 import type { Equipment, MovementType, MuscleGroup } from '../db/types';
 import { mix, resolve, type Joints } from './figures/rig';
 import { Figure, arrow, floorLine } from './figures/draw';
-import { EXERCISE_TEMPLATE, TEMPLATES, type Template, type TemplateKey } from './figures/templates';
+import { TEMPLATES, type Template, type TemplateKey } from './figures/templates';
+import { catalogEntry } from '../data/catalog';
 
 type ArtExercise = { id: string; equipment: Equipment; movement: MovementType; primaryMuscle: MuscleGroup };
 
 const FALLBACK: Partial<Record<MuscleGroup, Partial<Record<Equipment, TemplateKey>> & { default: TemplateKey }>> = {
-  pecho: { barra: 'bench-bar', mancuernas: 'bench-db', maquina: 'chest-press-machine', polea: 'cable-cross', banda: 'band-press', default: 'pushup' },
-  espalda: { barra: 'row-bar', mancuernas: 'row-db-one', maquina: 'row-machine', polea: 'lat-pulldown', banda: 'row-band', default: 'pullup' },
-  hombros: { barra: 'ohp-bar', mancuernas: 'lateral-db', maquina: 'ohp-machine', polea: 'lateral-cable', peso_corporal: 'handstand-pushup', default: 'lateral-db' },
-  biceps: { barra: 'curl-bar', polea: 'curl-cable', maquina: 'curl-preacher', banda: 'curl-band', peso_corporal: 'pullup', default: 'curl-db' },
-  triceps: { barra: 'skullcrusher', mancuernas: 'overhead-ext', polea: 'pushdown-bar', maquina: 'pushdown-bar', banda: 'pushdown-rope', default: 'bench-dip' },
+  pecho: { barra: 'bench-bar', mancuernas: 'bench-db', maquina: 'chest-press-machine', polea: 'cable-cross', banda: 'band-press', kettlebell: 'bench-kb', default: 'pushup' },
+  espalda: { barra: 'row-bar', mancuernas: 'row-db-one', maquina: 'row-machine', polea: 'lat-pulldown', banda: 'row-band', kettlebell: 'row-kb', default: 'pullup' },
+  hombros: { barra: 'ohp-bar', mancuernas: 'lateral-db', maquina: 'ohp-machine', polea: 'lateral-cable', peso_corporal: 'pike-pushup', banda: 'ohp-band', kettlebell: 'ohp-kb', default: 'lateral-db' },
+  biceps: { barra: 'curl-bar', polea: 'curl-cable', maquina: 'curl-preacher', banda: 'curl-band', peso_corporal: 'pullup', kettlebell: 'curl-kb', default: 'curl-db' },
+  triceps: { barra: 'skullcrusher', mancuernas: 'overhead-ext', polea: 'pushdown-bar', maquina: 'pushdown-bar', banda: 'pushdown-band', kettlebell: 'overhead-ext-kb', default: 'bench-dip' },
   antebrazos: { default: 'wrist-curl' },
-  cuadriceps: { barra: 'squat-back', mancuernas: 'lunge', maquina: 'leg-press', polea: 'squat-goblet', default: 'squat-bw' },
-  isquios: { barra: 'rdl-bar', mancuernas: 'rdl-db', maquina: 'leg-curl-lying', polea: 'leg-curl-seated', default: 'rdl-single' },
-  gluteos: { barra: 'hip-thrust', maquina: 'abduction', polea: 'cable-kickback', banda: 'monster-walk', default: 'glute-bridge' },
+  cuadriceps: { barra: 'squat-back', mancuernas: 'lunge', maquina: 'leg-press', polea: 'squat-goblet', banda: 'squat-band', kettlebell: 'squat-goblet', default: 'squat-bw' },
+  isquios: { barra: 'rdl-bar', mancuernas: 'rdl-db', maquina: 'leg-curl-lying', polea: 'leg-curl-seated', kettlebell: 'rdl-kb', default: 'rdl-single' },
+  gluteos: { barra: 'hip-thrust', mancuernas: 'hip-thrust-db', maquina: 'abduction', polea: 'cable-kickback', banda: 'monster-walk', kettlebell: 'sumo-kb', default: 'glute-bridge' },
   gemelos: { maquina: 'calf-machine', default: 'calf-single' },
   abdominales: { polea: 'cable-crunch', default: 'crunch' },
-  cuerpo_completo: { peso_corporal: 'burpee', barra: 'clean', default: 'kb-swing' },
+  cuerpo_completo: { peso_corporal: 'burpee', barra: 'clean', kettlebell: 'kb-swing', default: 'kb-swing' },
   cardio: { maquina: 'treadmill', default: 'run' },
   movilidad: { banda: 'band-dislocate', default: 'hamstring-stretch' },
 };
 
 /** Plantilla asociada a un ejercicio (identificador estable o regla por músculo y material). */
 export function templateKeyFor(ex: ArtExercise): TemplateKey {
-  const own = EXERCISE_TEMPLATE[ex.id.replace(/^ex-/, '')];
+  const own = catalogEntry(ex)?.art;
   if (own) return own;
   const byMuscle = FALLBACK[ex.primaryMuscle];
   return byMuscle?.[ex.equipment] ?? byMuscle?.default ?? 'squat-bw';

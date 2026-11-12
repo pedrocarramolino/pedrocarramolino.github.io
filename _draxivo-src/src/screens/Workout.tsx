@@ -13,6 +13,7 @@ import { DateInput, ActionMenu, Button, Card, Empty, Field, IconButton, Input, L
 import { ExerciseArt } from '../ui/ExerciseArt';
 import { ReorderList } from '../ui/reorder';
 import { ExercisePicker, useExerciseMap, useStartWorkout, useWorkouts } from './shared';
+import { ExerciseGuideSheet } from './ExerciseGuide';
 import { uid } from '../lib/id';
 import { clearRestNotification, showRestNotification } from '../app/notify';
 import { ensurePushSubscription, scheduleRestPush } from '../app/push';
@@ -77,6 +78,7 @@ export function WorkoutScreen({ editId }: { editId?: string }) {
   const [menuEx, setMenuEx] = useState<string | null>(null);
   const [setMenu, setSetMenu] = useState<{ exId: string; setId: string } | null>(null);
   const [restEdit, setRestEdit] = useState<string | null>(null);
+  const [guide, setGuide] = useState<Exercise | null>(null);
   const [reorder, setReorder] = useState(false);
   const [finishing, setFinishing] = useState(false);
   const [workoutMenu, setWorkoutMenu] = useState(false);
@@ -410,6 +412,7 @@ export function WorkoutScreen({ editId }: { editId?: string }) {
         showNotes={!!showNotes[ex.id] || !!ex.notes}
         nextSetId={pending?.ex.id === ex.id ? pending.s.id : null}
         onMenu={() => setMenuEx(ex.id)}
+        onGuide={() => (exMap.get(ex.exerciseId) ? setGuide(exMap.get(ex.exerciseId)!) : navigate(`/exercises/${ex.exerciseId}`))}
         onNotes={(notes) => updateEx(ex.id, (e) => ({ ...e, notes }))}
         onToggle={(s2) => toggleSet(ex, s2)}
         onChange={(setId, p2) => updateSet(ex.id, setId, p2)}
@@ -639,6 +642,7 @@ export function WorkoutScreen({ editId }: { editId?: string }) {
       />
 
       <ActionMenu open={!!menuExercise} onClose={() => setMenuEx(null)} title={menuExercise?.name ?? ''} actions={exMenuActions} />
+      <ExerciseGuideSheet ex={guide} onClose={() => setGuide(null)} />
 
       <ActionMenu
         open={!!setMenu && !!setMenuExercise}
@@ -742,6 +746,7 @@ function ExerciseCard({
   showNotes,
   nextSetId,
   onMenu,
+  onGuide,
   onNotes,
   onToggle,
   onChange,
@@ -758,6 +763,7 @@ function ExerciseCard({
   showNotes: boolean;
   nextSetId: string | null;
   onMenu: () => void;
+  onGuide: () => void;
   onNotes: (n: string) => void;
   onToggle: (s: WorkoutSet) => void;
   onChange: (setId: string, p: Partial<WorkoutSet>) => void;
@@ -780,8 +786,10 @@ function ExerciseCard({
   return (
     <section className={cx('wex', ex.supersetId && 'superset')} aria-label={ex.name}>
       <div className="wex-head">
-        <ExerciseArt exercise={info ?? { id: ex.exerciseId, equipment: 'otros', movement: 'compuesto', primaryMuscle: ex.primaryMuscle }} size={76} />
-        <button className="wex-name" onClick={() => navigate(`/exercises/${ex.exerciseId}`)} aria-label={`${ex.name}: ver ejercicio`}>
+        <button type="button" className="wex-art-btn" onClick={onGuide} aria-label={`Cómo se hace: ${ex.name}`}>
+          <ExerciseArt exercise={info ?? { id: ex.exerciseId, equipment: 'otros', movement: 'compuesto', primaryMuscle: ex.primaryMuscle }} size={76} />
+        </button>
+        <button className="wex-name" onClick={onGuide} aria-label={`${ex.name}: ver cómo se hace`}>
           <h3>{ex.name}</h3>
           <p>
             {MUSCLES[ex.primaryMuscle]}

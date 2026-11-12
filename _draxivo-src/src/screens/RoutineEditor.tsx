@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react';
 import { ArrowUpDown, Ellipsis, Link2, Plus, Trash2 } from 'lucide-react';
-import type { EffortMetric, PlannedSet, Routine, RoutineExercise, SetType } from '../db/types';
+import type { EffortMetric, Exercise, PlannedSet, Routine, RoutineExercise, SetType } from '../db/types';
 import { useQuery } from '../app/hooks';
 import { goBack, navigate, useRoute } from '../app/router';
 import { useSettings, useToast } from '../app/context';
@@ -12,6 +12,7 @@ import { ActionMenu, Button, Empty, Field, IconButton, Input, Loading, NumberInp
 import { ReorderList } from '../ui/reorder';
 import { ExerciseArt } from '../ui/ExerciseArt';
 import { ExercisePicker, useExerciseMap } from './shared';
+import { ExerciseGuideSheet, exerciseMeta } from './ExerciseGuide';
 import { uid } from '../lib/id';
 
 const RESTS = [0, 30, 45, 60, 75, 90, 120, 150, 180, 240, 300];
@@ -29,6 +30,7 @@ export function RoutineEditor({ id }: { id: string | null }) {
   const [picker, setPicker] = useState(false);
   const [reorder, setReorder] = useState(false);
   const [menu, setMenu] = useState<string | null>(null);
+  const [guide, setGuide] = useState<Exercise | null>(null);
   const [error, setError] = useState('');
 
   useEffect(() => {
@@ -180,13 +182,18 @@ export function RoutineEditor({ id }: { id: string | null }) {
             return (
               <div key={e.id} className={cx('wex', e.supersetId && 'superset')} style={{ marginTop: 0 }}>
                 <div className="wex-head">
-                  <ExerciseArt exercise={ex} size={64} />
-                  <div className="wex-name">
+                  <button type="button" className="wex-art-btn" onClick={() => ex && setGuide(ex)} disabled={!ex} aria-label={`Cómo se hace: ${ex?.name ?? 'ejercicio'}`}>
+                    <ExerciseArt exercise={ex} size={72} />
+                  </button>
+                  <button type="button" className="wex-name" onClick={() => ex && setGuide(ex)} disabled={!ex}>
                     <h3>
                       {i + 1}. {ex?.name ?? 'Ejercicio eliminado'}
                     </h3>
-                    {e.supersetId && <p>Superserie{linked ? ' con el siguiente ↓' : ''}</p>}
-                  </div>
+                    <p>
+                      {ex ? exerciseMeta(ex) : ''}
+                      {e.supersetId && ` · Superserie${linked ? ' con el siguiente ↓' : ''}`}
+                    </p>
+                  </button>
                   <IconButton label={`Opciones de ${ex?.name ?? 'ejercicio'}`} onClick={() => setMenu(e.id)}>
                     <Ellipsis size={22} />
                   </IconButton>
@@ -333,6 +340,7 @@ export function RoutineEditor({ id }: { id: string | null }) {
             : []
         }
       />
+      <ExerciseGuideSheet ex={guide} onClose={() => setGuide(null)} />
     </Page>
   );
 }

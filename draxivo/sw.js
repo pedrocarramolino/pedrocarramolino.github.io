@@ -1,7 +1,7 @@
 // Service worker de DRAXIVO. Generado en el build.
-const VERSION = 'mwde4oed';
+const VERSION = 'mwe07lfz';
 const CACHE = 'draxivo-' + VERSION;
-const PRECACHE = ["./","index.html","manifest.webmanifest","icons/icon.svg","icons/icon-192.png","icons/icon-512.png","icons/apple-touch-icon.png","icons/maskable-512.png","assets/index-eliGECwM.js","assets/index-DGaDJKY5.css"];
+const PRECACHE = ["./","index.html","manifest.webmanifest","icons/icon.svg","icons/icon-192.png","icons/icon-512.png","icons/apple-touch-icon.png","icons/maskable-512.png","assets/index-CVhdjLHr.js","assets/index-D2vHZBWf.css"];
 
 self.addEventListener('install', (event) => {
   event.waitUntil(caches.open(CACHE).then((c) => c.addAll(PRECACHE)));

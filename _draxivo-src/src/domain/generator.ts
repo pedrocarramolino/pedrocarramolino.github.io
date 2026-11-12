@@ -6,9 +6,10 @@ import type { Equipment, Exercise, MuscleGroup, PlannedSet, Routine } from '../d
 import { emptyRoutine, newPlannedSet } from '../db/repo';
 import { uid } from '../lib/id';
 import { MUSCLES } from '../lib/labels';
+import { catalogEntry } from '../data/catalog';
 
 export type Level = 'principiante' | 'intermedio' | 'avanzado';
-export type EquipKey = 'gym' | 'mancuernas' | 'barra' | 'maquinas' | 'bandas' | 'peso_corporal';
+export type EquipKey = 'gym' | 'mancuernas' | 'barra' | 'maquinas' | 'bandas' | 'kettlebell' | 'peso_corporal';
 export type Role = 'main' | 'sec' | 'acc';
 
 export const EQUIP_OPTIONS: { value: EquipKey; label: string }[] = [
@@ -17,6 +18,7 @@ export const EQUIP_OPTIONS: { value: EquipKey; label: string }[] = [
   { value: 'barra', label: 'Barra' },
   { value: 'maquinas', label: 'Máquinas y poleas' },
   { value: 'bandas', label: 'Bandas elásticas' },
+  { value: 'kettlebell', label: 'Kettlebell' },
   { value: 'peso_corporal', label: 'Peso corporal' },
 ];
 
@@ -126,6 +128,7 @@ export function parseRequest(text: string): ParsedRequest {
   if (/\bbarras?\b/.test(t) && !/barra de dominadas/.test(t)) equipment.push('barra');
   if (/maquina|polea/.test(t)) equipment.push('maquinas');
   if (/\b(bandas?|gomas?|elasticos?)\b/.test(t)) equipment.push('bandas');
+  if (/kettlebell|pesas? rusas?/.test(t)) equipment.push('kettlebell');
   if (/peso corporal|sin material|sin pesas|calistenia|en casa/.test(t)) equipment.push('peso_corporal');
 
   let level: Level | null = null;
@@ -251,6 +254,9 @@ const META: Record<string, Meta> = {
 function metaOf(ex: Exercise): Meta {
   const m = META[ex.id.replace(/^ex-/, '')];
   if (m) return m;
+  // Resto de la biblioteca: datos del catálogo (nivel → dificultad técnica).
+  const c = catalogEntry(ex);
+  if (c) return [c.role, c.level === 'avanzado' ? 3 : c.level === 'intermedio' ? 2 : 1, c.pattern, c.gym];
   // Ejercicios personalizados: se deduce el papel por el tipo de movimiento.
   return [ex.movement === 'compuesto' ? 'sec' : 'acc', 1, `custom-${ex.id}`];
 }
@@ -270,6 +276,7 @@ function equipAllowed(ex: Exercise, sel: EquipKey[]): 'yes' | 'fallback' | 'no' 
   if (sel.includes('barra') && e === 'barra') return 'yes';
   if (sel.includes('maquinas') && (e === 'maquina' || e === 'polea')) return 'yes';
   if (sel.includes('bandas') && e === 'banda') return 'yes';
+  if (sel.includes('kettlebell') && e === 'kettlebell') return 'yes';
   if (e === 'peso_corporal' && !needsGym) return sel.includes('peso_corporal') ? 'yes' : 'fallback';
   return 'no';
 }

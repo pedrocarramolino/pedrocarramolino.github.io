@@ -11,8 +11,9 @@ await new Promise((r) => setTimeout(r, 3000));
 const b = await chromium.launch();
 const p = await b.newPage({ viewport: { width: 1212, height: 900 }, deviceScaleFactor: 1 });
 p.on('pageerror', (e) => console.log('pageerror', e.message));
-for (let from = 0; from < 130; from += 30) {
-  await p.goto(`http://localhost:4185/dev/gallery.html?from=${from}&count=30&theme=${theme}`);
+const extra = process.argv[3] ? `&new=${process.argv[3]}` : '';
+for (let from = 0; from < 240; from += 30) {
+  await p.goto(`http://localhost:4185/dev/gallery.html?from=${from}&count=30&theme=${theme}${extra}`);
   await p.waitForTimeout(800);
   await p.screenshot({ path: `${OUT}/${theme}-${from}.png`, fullPage: true });
 }

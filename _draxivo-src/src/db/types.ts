@@ -26,6 +26,7 @@ export type Equipment =
   | 'polea'
   | 'peso_corporal'
   | 'banda'
+  | 'kettlebell'
   | 'otros';
 
 export type MovementType = 'compuesto' | 'aislamiento' | 'cardio' | 'movilidad';

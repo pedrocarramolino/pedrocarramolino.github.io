@@ -1,6 +1,5 @@
 import { useMemo, useState } from 'react';
-import { Ellipsis, Plus, Search } from 'lucide-react';
-import type { Equipment, MuscleGroup } from '../db/types';
+import { Ellipsis, Plus } from 'lucide-react';
 import { useMediaQuery, useQuery } from '../app/hooks';
 import { goBack, navigate } from '../app/router';
 import { useToast } from '../app/context';
@@ -10,35 +9,26 @@ import { fmtDate, fmtDateShort } from '../lib/dates';
 import { EQUIPMENT, MOVEMENTS, MUSCLES, TRACKING, supportsLoadMetrics, usesDistance, usesDuration } from '../lib/labels';
 import { fmtWeightNum, num, toDisplayWeight, wUnit } from '../lib/units';
 import { LineChart } from '../ui/charts';
-import { ActionMenu, Button, Empty, IconButton, Input, List, Loading, Page, Row, Section, Segmented, Tag, cx, useConfirm } from '../ui/kit';
-import { ExerciseArt, sceneFor } from '../ui/ExerciseArt';
-import { ExerciseForm, MuscleChips, normalize, useExercises, useWorkouts } from './shared';
+import { ActionMenu, Button, Empty, IconButton, List, Loading, Page, Row, Section, Segmented, Tag, useConfirm } from '../ui/kit';
+import { ExerciseArt } from '../ui/ExerciseArt';
+import { LEVELS, PATTERN_LABEL, alternativesFor, catalogEntry } from '../data/catalog';
+import { ExerciseFilters, GuideSections, GuideTags, exerciseMeta, useExerciseFilter } from './ExerciseGuide';
+import { ExerciseForm, useExercises, useWorkouts } from './shared';
 import { fmtPR, fmtSet } from './WorkoutSummary';
 
 export function Exercises() {
   const all = useExercises(true);
   const workouts = useWorkouts();
-  const [q, setQ] = useState('');
-  const [muscle, setMuscle] = useState<MuscleGroup | ''>('');
-  const [equip, setEquip] = useState<Equipment | ''>('');
   const [tab, setTab] = useState<'all' | 'custom' | 'archived'>('all');
+  const scoped = useMemo(() => (all ?? []).filter((e) => (tab === 'archived' ? e.archived : !e.archived) && (tab !== 'custom' || e.custom)), [all, tab]);
+  const filter = useExerciseFilter(all ? scoped : undefined);
+  const list = filter.list;
   const [creating, setCreating] = useState(false);
   const counts = useMemo(() => {
     const m = new Map<string, number>();
     for (const w of workouts ?? []) for (const e of w.exercises) m.set(e.exerciseId, (m.get(e.exerciseId) ?? 0) + 1);
     return m;
   }, [workouts]);
-  const list = useMemo(() => {
-    const nq = normalize(q.trim());
-    return (all ?? []).filter(
-      (e) =>
-        (tab === 'archived' ? e.archived : !e.archived) &&
-        (tab !== 'custom' || e.custom) &&
-        (!nq || normalize(e.name).includes(nq)) &&
-        (!muscle || e.primaryMuscle === muscle || e.secondaryMuscles.includes(muscle)) &&
-        (!equip || e.equipment === equip),
-    );
-  }, [all, q, muscle, equip, tab]);
   if (!all) return <Loading />;
   return (
     <Page
@@ -53,22 +43,16 @@ export function Exercises() {
         </IconButton>
       }
     >
-      <div className="search">
-        <Search size={18} />
-        <Input type="search" placeholder="Buscar ejercicios…" value={q} onChange={(e) => setQ(e.target.value)} aria-label="Buscar ejercicio" />
-      </div>
-      <Segmented label="Filtrar" value={tab} onChange={setTab} options={[{ value: 'all', label: 'Todos' }, { value: 'custom', label: 'Personalizados' }, { value: 'archived', label: 'Archivados' }]} />
+      <Segmented label="Mostrar" value={tab} onChange={setTab} options={[{ value: 'all', label: 'Biblioteca' }, { value: 'custom', label: 'Personalizados' }, { value: 'archived', label: 'Archivados' }]} />
       <div className="mt" />
-      <MuscleChips value={muscle} onChange={setMuscle} />
-      <div className="chips">
-        <button type="button" className={cx('chip', !equip && 'active')} onClick={() => setEquip('')}>
-          Todo el equipo
-        </button>
-        {(Object.keys(EQUIPMENT) as Equipment[]).map((k) => (
-          <button key={k} type="button" className={cx('chip', equip === k && 'active')} aria-pressed={equip === k} onClick={() => setEquip(equip === k ? '' : k)}>
-            {EQUIPMENT[k]}
+      <ExerciseFilters filter={filter} />
+      <div className="picker-count small muted">
+        {list.length} {list.length === 1 ? 'ejercicio' : 'ejercicios'}
+        {filter.active && (
+          <button type="button" className="link-btn" onClick={filter.reset}>
+            Quitar filtros
           </button>
-        ))}
+        )}
       </div>
       <Section>
         {list.length ? (
@@ -76,9 +60,10 @@ export function Exercises() {
             {list.map((e) => (
               <Row
                 key={e.id}
-                icon={<ExerciseArt exercise={e} size={52} />}
+                icon={<ExerciseArt exercise={e} size={60} />}
                 title={e.name}
-                subtitle={`${MUSCLES[e.primaryMuscle]} · ${EQUIPMENT[e.equipment]}${counts.get(e.id) ? ` · ${counts.get(e.id)} sesiones` : ''}`}
+                subtitle={`${exerciseMeta(e)}${counts.get(e.id) ? ` · ${counts.get(e.id)} sesiones` : ''}`}
+                chevron
                 value={e.custom ? <Tag>Propio</Tag> : undefined}
                 onClick={() => navigate(`/exercises/${e.id}`)}
               />
@@ -88,7 +73,7 @@ export function Exercises() {
           <Empty title="Sin resultados" text={tab === 'custom' ? 'Aún no has creado ejercicios personalizados.' : 'Prueba con otros filtros.'} action={<Button variant="tinted" onClick={() => setCreating(true)}>Crear ejercicio</Button>} />
         )}
       </Section>
-      <ExerciseForm open={creating} onClose={() => setCreating(false)} onSaved={(e) => navigate(`/exercises/${e.id}`)} initial={{ name: q }} />
+      <ExerciseForm open={creating} onClose={() => setCreating(false)} onSaved={(e) => navigate(`/exercises/${e.id}`)} initial={{ name: filter.f.q }} />
     </Page>
   );
 }
@@ -113,15 +98,8 @@ export function ExerciseDetail({ id }: { id: string }) {
       </Page>
     );
   const hist = exerciseHistory(workouts, id);
-  // Pasos breves a partir de las instrucciones (una frase por paso).
-  const steps = ex.instructions
-    .split(/(?<=\.)\s+/)
-    .map((x) => x.trim())
-    .filter(Boolean);
-  const variants = (all ?? [])
-    .filter((v) => v.id !== ex.id && !v.archived && v.primaryMuscle === ex.primaryMuscle && v.movement === ex.movement)
-    .sort((a, b) => Number(sceneFor(b) === sceneFor(ex)) - Number(sceneFor(a) === sceneFor(ex)) || a.name.localeCompare(b.name, 'es'))
-    .slice(0, 5);
+  const variants = alternativesFor(ex, all ?? []);
+  const entry = catalogEntry(ex);
   const prs = personalRecords(workouts, id);
   const load = supportsLoadMetrics(ex.tracking);
   const options: { value: Metric; label: string }[] = load
@@ -197,27 +175,9 @@ export function ExerciseDetail({ id }: { id: string }) {
         </figure>
       </div>
       <h2 className="page-title-inline mt-lg">{ex.name}</h2>
-      <p className="muted">
-        {MUSCLES[ex.primaryMuscle]} · {EQUIPMENT[ex.equipment]}
-      </p>
-      <div className="chips chips-wrap mt">
-        {[ex.primaryMuscle, ...ex.secondaryMuscles].map((m, i) => (
-          <span key={m} className={cx('tag', i === 0 && 'tag-blue')} style={{ padding: '6px 12px', fontSize: 13 }}>
-            {MUSCLES[m]}
-          </span>
-        ))}
-      </div>
-      {steps.length > 0 && (
-        <Section title="Instrucciones">
-          <div className="card">
-            <ol className="steps-list">
-              {steps.map((x) => (
-                <li key={x}>{x}</li>
-              ))}
-            </ol>
-          </div>
-        </Section>
-      )}
+      <p className="muted">{exerciseMeta(ex)}</p>
+      <GuideTags ex={ex} />
+      <GuideSections ex={ex} />
       {ex.notes && (
         <Section title="Notas personales">
           <div className="card">{ex.notes}</div>
@@ -281,15 +241,18 @@ export function ExerciseDetail({ id }: { id: string }) {
         <List>
           <Row title="Tipo de registro" value={TRACKING[ex.tracking]} />
           <Row title="Movimiento" value={MOVEMENTS[ex.movement]} />
+          {entry && <Row title="Nivel" value={LEVELS[entry.level]} />}
+          {entry && <Row title="Patrón" value={PATTERN_LABEL[entry.pattern]} />}
+          <Row title="Material" value={EQUIPMENT[ex.equipment]} />
           <Row title="Secundarios" value={ex.secondaryMuscles.length ? ex.secondaryMuscles.map((x) => MUSCLES[x]).join(', ') : '—'} />
           <Row title="Unidad" value={load || ex.tracking === 'assisted_bodyweight' ? wUnit() : usesDuration(ex.tracking) ? (usesDistance(ex.tracking) ? 'm y s' : 's') : 'reps'} />
         </List>
       </Section>
       {variants.length > 0 && (
-        <Section title="Variantes y alternativas">
+        <Section title="Variantes y sustituciones" footer="Ejercicios equivalentes por si no tienes el material o quieres variar.">
           <List>
             {variants.map((v) => (
-              <Row key={v.id} icon={<ExerciseArt exercise={v} size={48} />} title={v.name} subtitle={`${MUSCLES[v.primaryMuscle]} · ${EQUIPMENT[v.equipment]}`} onClick={() => navigate(`/exercises/${v.id}`)} />
+              <Row key={v.id} icon={<ExerciseArt exercise={v} size={52} />} title={v.name} subtitle={exerciseMeta(v)} onClick={() => navigate(`/exercises/${v.id}`)} chevron />
             ))}
           </List>
         </Section>

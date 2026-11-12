@@ -43,6 +43,8 @@ const held = (imp: Imp, two = true) => (j: Joints) => {
       return { back: two ? dumbbell(j.ha2) : undefined, front: dumbbell(j.ha) };
     case 'kb':
       return { front: kettlebell(rel(j.ha, 0, 4)) };
+    case 'band':
+      return { back: band(j.to, j.ha, rel(j.ha, 3, 14)) };
     default:
       return {};
   }
@@ -303,7 +305,7 @@ function ohpSeat(imp: Imp): Template {
   };
 }
 
-function lateralRaise(cable: boolean): Template {
+function lateralRaise(cable: boolean, withBand = false): Template {
   if (cable)
     return {
       a: standF({ armR: { to: [64, 54] }, armL: { to: [47, 52] } }),
@@ -315,24 +317,31 @@ function lateralRaise(cable: boolean): Template {
   return {
     a: standF({ armL: { to: [47, 53] }, armR: { to: [73, 53] } }),
     b: standF({ armL: { to: [28, 28] }, armR: { to: [92, 28] } }),
-    gear: (j) => ({ front: <>{dumbbellFront(j.ha, true)}{dumbbellFront(j.ha2, true)}</> }),
+    gear: withBand ? (j) => ({ back: <>{band(j.an, j.ha)}{band(j.an2, j.ha2)}</> }) : (j) => ({ front: <>{dumbbellFront(j.ha, true)}{dumbbellFront(j.ha2, true)}</> }),
     track: hand,
     bulge: 0.12,
   };
 }
 
-function frontRaise(): Template {
+function frontRaise(withPlate = false): Template {
   const s = shoulderOf(HIP, 180);
-  return { a: stand({ arm: { to: rel(s, 3, 26) } }), b: stand({ arm: { to: rel(s, 26, -2) } }), gear: held('db', false), track: hand, bulge: -0.25 };
+  return {
+    a: stand({ arm: { to: rel(s, 3, 26) } }),
+    b: stand({ arm: { to: rel(s, 26, -2) } }),
+    gear: withPlate ? (j) => ({ front: plate(j.ha, 7) }) : held('db', false),
+    track: hand,
+    bulge: -0.25,
+  };
 }
 
-function rearFly(): Template {
+function rearFly(cable = false): Template {
   const h: V = [52, 50];
   const s = shoulderOf(h, 105);
   return {
     a: { hip: h, torso: 105, arm: { to: rel(s, 1, 26) }, leg: { to: [58, 84] } },
     b: { hip: h, torso: 105, arm: { pts: [rel(s, -3, 6), rel(s, -1, -2)] }, arm2: { pts: [rel(s, -3, 6), rel(s, -1, -2)] }, leg: { to: [58, 84] } },
-    gear: (j) => ({ front: dumbbell(j.ha) }),
+    scene: cable ? pulleyTower(106, 56) : undefined,
+    gear: cable ? (j) => ({ back: line([104, 56], j.ha), front: <circle cx={j.ha[0]} cy={j.ha[1]} r="2.2" className="a-dark" /> }) : (j) => ({ front: dumbbell(j.ha) }),
     track: hand,
   };
 }
@@ -365,6 +374,13 @@ function facePull(): Template {
 
 // ---------- Espalda ----------
 function deadlift(imp: Imp, sumo: boolean): Template {
+  if (sumo && imp === 'kb')
+    return {
+      a: { front: true, hip: [60, 64], armL: { to: [58, 74] }, armR: { to: [62, 74] }, legL: { to: [38, 84], bend: -1 }, legR: { to: [82, 84], bend: 1 } },
+      b: { front: true, hip: [60, 51], armL: { to: [58, 74] }, armR: { to: [62, 74] }, legL: { to: [41, 84] }, legR: { to: [79, 84] } },
+      gear: (j) => ({ front: kettlebell([60, j.ha[1] + 3]) }),
+      track: hip,
+    };
   if (sumo)
     return {
       a: { front: true, hip: [60, 62], armL: { to: [55, 76] }, armR: { to: [65, 76] }, legL: { to: [38, 84], bend: -1 }, legR: { to: [82, 84], bend: 1 } },
@@ -631,15 +647,15 @@ function concentration(): Template {
   };
 }
 
-function pushdown(rope: boolean): Template {
+function pushdown(rope: boolean, withBand = false): Template {
   const h: V = [56, 49];
   const s = shoulderOf(h, 174);
   return {
     a: { hip: h, torso: 174, arm: { pts: [rel(s, 1, 14), rel(s, 13, 9)] }, leg: { to: [58, 84] } },
     b: { hip: h, torso: 174, arm: { pts: [rel(s, 1, 14), rel(s, 6, 26)] }, leg: { to: [58, 84] } },
-    scene: pulleyTower(90, 6),
+    scene: withBand ? post(90, 4) : pulleyTower(90, 6),
     gear: (j) => ({
-      back: line([88, 7], j.ha),
+      back: withBand ? band([88, 8], j.ha) : line([88, 7], j.ha),
       front: rope ? <path d={`M${j.ha[0]} ${j.ha[1]} l-2 5 M${j.ha[0]} ${j.ha[1]} l2 5`} className="a-rope" strokeWidth="2" strokeLinecap="round" /> : <circle cx={j.ha[0]} cy={j.ha[1]} r="2.4" className="a-dark" />,
     }),
     track: hand,
@@ -647,7 +663,7 @@ function pushdown(rope: boolean): Template {
   };
 }
 
-function overheadExt(): Template {
+function overheadExt(imp: Imp = 'db'): Template {
   const h: V = [54, 66];
   const s = shoulderOf(h, 180);
   const base = (arm: SidePose['arm']): SidePose => ({ hip: h, torso: 180, arm, leg: { to: [72, 84] } });
@@ -661,7 +677,7 @@ function overheadExt(): Template {
         {pad([46, 70], [46, 40])}
       </>
     ),
-    gear: (j) => ({ front: dumbbell(j.ha, 4.8) }),
+    gear: (j) => ({ front: imp === 'kb' ? kettlebell(rel(j.ha, 0, -3), 5) : imp === 'cable' ? <>{line([98, 84], j.ha)}<circle cx={j.ha[0]} cy={j.ha[1]} r="2.4" className="a-dark" /></> : dumbbell(j.ha, 4.8) }),
     track: hand,
     scale: 0.9,
   };
@@ -679,11 +695,11 @@ function wristCurl(): Template {
   };
 }
 
-function farmer(): Template {
+function farmer(imp: Imp = 'db'): Template {
   return {
     a: stand({ leg: { to: [72, 84] }, leg2: { to: [48, 84] }, arm: { to: [61, 52] } }),
     b: stand({ hip: [66, 49], leg: { to: [60, 84] }, leg2: { to: [78, 84] }, arm: { to: [67, 52] } }),
-    gear: held('db'),
+    gear: held(imp),
     track: hip,
   };
 }
@@ -705,7 +721,7 @@ function deadHang(): Template {
 }
 
 // ---------- Piernas ----------
-function squat(kind: 'back' | 'front' | 'goblet' | 'bw'): Template {
+function squat(kind: 'back' | 'front' | 'goblet' | 'bw' | 'band' | 'box'): Template {
   const h2: V = kind === 'front' || kind === 'goblet' ? [46, 69] : [44, 68];
   const t2 = kind === 'front' ? 160 : kind === 'goblet' ? 158 : 145;
   const s1 = shoulderOf(HIP, 180);
@@ -714,6 +730,7 @@ function squat(kind: 'back' | 'front' | 'goblet' | 'bw'): Template {
     if (kind === 'back') return { pts: [rel(s, -6, 10), rel(s, -1, -1)] };
     if (kind === 'front') return { pts: [rel(s, 8, 4), rel(s, 4, -4)] };
     if (kind === 'goblet') return { to: rel(s, 8, 8), bend: -1 };
+    if (kind === 'band') return { to: rel(s, 6, 2), bend: -1 };
     return { to: rel(s, 27, 0) };
   };
   return {
@@ -721,7 +738,9 @@ function squat(kind: 'back' | 'front' | 'goblet' | 'bw'): Template {
     b: { hip: h2, torso: t2, arm: arms(s2), leg: { to: [60, 84] } },
     gear: (j) => ({
       front: kind === 'back' ? plate(rel(j.ha, 0, -2)) : kind === 'front' ? plate(rel(j.ha, 2, 2)) : kind === 'goblet' ? kettlebell(rel(j.ha, 2, 2)) : undefined,
+      back: kind === 'band' ? band(j.to, j.ha, rel(j.ha, 4, 14)) : undefined,
     }),
+    scene: kind === 'box' ? box(26, 67, 20, 18) : undefined,
     track: hip,
     thumb: 'b',
   };
@@ -779,31 +798,38 @@ function legExtension(): Template {
   };
 }
 
-function lunge(): Template {
+function lunge(imp: Imp = 'db', back = false): Template {
+  // Con barra: apoyada en la espalda; hacia atrás: el pie trasero retrocede.
+  const barArm = (h: V): SidePose['arm'] => {
+    const s = shoulderOf(h, 180);
+    return { pts: [rel(s, -6, 10), rel(s, -1, -1)] };
+  };
   return {
-    a: stand({ arm: { to: [61, 52] } }),
-    b: { hip: [56, 62], torso: 180, arm: { to: [57, 64] }, leg: { to: [72, 84] }, leg2: { pts: [[46, 78], [31, 76]] }, toe2: [35, 84] },
-    gear: held('db'),
+    a: stand({ arm: imp === 'bar' ? barArm(HIP) : { to: [61, 52] } }),
+    b: back
+      ? { hip: [62, 62], torso: 180, arm: imp === 'bar' ? barArm([62, 62]) : { to: [63, 64] }, leg: { to: [76, 84] }, leg2: { pts: [[52, 78], [37, 76]] }, toe2: [41, 84] }
+      : { hip: [56, 62], torso: 180, arm: imp === 'bar' ? barArm([56, 62]) : { to: [57, 64] }, leg: { to: [72, 84] }, leg2: { pts: [[46, 78], [31, 76]] }, toe2: [35, 84] },
+    gear: imp === 'bar' ? (j) => ({ front: plate(rel(j.ha, 0, -2)) }) : imp === 'bw' ? undefined : held(imp),
     track: hip,
   };
 }
 
-function bulgarian(): Template {
+function bulgarian(imp: Imp = 'db'): Template {
   return {
     a: { hip: [54, 51], torso: 178, arm: { to: [55, 54] }, leg: { to: [66, 84] }, leg2: { pts: [[46, 66], [30, 64]] }, toe2: [24, 62] },
     b: { hip: [54, 63], torso: 172, arm: { to: [56, 66] }, leg: { to: [68, 84] }, leg2: { pts: [[42, 76], [30, 64]] }, toe2: [24, 62] },
     scene: bench(10, 34, 64),
-    gear: held('db'),
+    gear: imp === 'bw' ? undefined : held(imp),
     track: hip,
   };
 }
 
-function stepUp(): Template {
+function stepUp(imp: Imp = 'db'): Template {
   return {
     a: { hip: [48, 49], torso: 176, arm: { to: [50, 52] }, leg: { to: [72, 64] }, leg2: { to: [48, 84] } },
     b: { hip: [72, 30], torso: 180, arm: { to: [73, 33] }, leg: { to: [72, 64] }, leg2: { to: [64, 56] } },
     scene: box(62, 65, 40, 20),
-    gear: held('db'),
+    gear: imp === 'bw' ? undefined : held(imp),
     track: hip,
     scale: 0.9,
   };
@@ -894,7 +920,7 @@ function hipThrust(imp: Imp): Template {
     a: { hip: [53, 77], torso: -128, arm: { to: [57, 70] }, leg: { to: [74, 84] } },
     b: { hip: [53, 61], torso: -96, arm: { to: [55, 54] }, leg: { to: [74, 84] } },
     scene: imp === 'bw' ? mat(8, 92) : bench(10, 36, 62),
-    gear: imp === 'bar' ? (j) => ({ front: plate(rel(j.hip, 2, -9)) }) : undefined,
+    gear: imp === 'bar' ? (j) => ({ front: plate(rel(j.hip, 2, -9)) }) : imp === 'db' ? (j) => ({ front: dumbbell(rel(j.hip, 2, -5)) }) : undefined,
     track: hip,
   };
 }
@@ -1088,13 +1114,13 @@ function snatch(): Template {
   };
 }
 
-function thruster(): Template {
+function thruster(imp: Imp = 'bar'): Template {
   const h: V = [46, 69];
   const s = shoulderOf(h, 160);
   return {
     a: { hip: h, torso: 160, arm: { pts: [rel(s, 8, 4), rel(s, 4, -4)] }, leg: { to: [60, 84] } },
     b: stand({ arm: { to: [61, -2] } }),
-    gear: held('bar'),
+    gear: held(imp),
     track: hand,
     scale: 0.86,
   };
@@ -1287,6 +1313,288 @@ function bandPress(): Template {
   };
 }
 
+
+// ---------- Variantes y ejercicios sin material ----------
+function pushupVar(kind: 'incline' | 'knee' | 'decline'): Template {
+  if (kind === 'incline')
+    return {
+      a: { hip: [48, 60], torso: 112, arm: { to: [82, 72] }, leg: { to: [20, 82] }, toe: [17, 84] },
+      b: { hip: [48, 64], torso: 104, arm: { to: [82, 72], bend: -1 }, leg: { to: [20, 83] }, toe: [17, 84] },
+      scene: box(72, 72, 26, 13),
+      track: neck,
+    };
+  if (kind === 'knee')
+    return {
+      a: { hip: [46, 68], torso: 112, arm: { to: [76, 84] }, leg: { pts: [[32, 82], [18, 76]] }, toe: [14, 73] },
+      b: { hip: [46, 74], torso: 100, arm: { to: [77, 84], bend: -1 }, leg: { pts: [[32, 83], [18, 77]] }, toe: [14, 74] },
+      scene: mat(10, 92),
+      track: neck,
+    };
+  return {
+    a: { hip: [46, 62], torso: 97, arm: { to: [76, 84] }, leg: { to: [18, 68] }, toe: [14, 68] },
+    b: { hip: [46, 68], torso: 88, arm: { to: [77, 84], bend: -1 }, leg: { to: [18, 68] }, toe: [14, 68] },
+    scene: box(4, 69, 24, 16),
+    track: neck,
+  };
+}
+
+function pulloverDb(): Template {
+  const s = shoulderOf(BENCH_HIP, -90);
+  return {
+    a: { hip: BENCH_HIP, torso: -90, arm: { to: rel(s, 0, -26) }, leg: { to: [84, 84] } },
+    b: { hip: BENCH_HIP, torso: -90, arm: { to: rel(s, -25, -4) }, leg: { to: [84, 84] } },
+    scene: bench(20, 78, 66),
+    gear: (j) => ({ front: dumbbell(j.ha, 4.8) }),
+    track: hand,
+    bulge: 0.3,
+  };
+}
+
+function invertedRow(): Template {
+  return {
+    a: { hip: [74, 72], torso: -110, arm: { to: [52, 41] }, leg: { to: [106, 84] } },
+    b: { hip: [74, 64], torso: -118, arm: { to: [53, 41], bend: 1 }, leg: { to: [104, 84] } },
+    scene: (
+      <>
+        {post(30, 38)}
+        <rect x="26" y="38.5" width="40" height="3" rx="1.5" className="a-metal" />
+      </>
+    ),
+    track: neck,
+  };
+}
+
+function pulldownBand(): Template {
+  const s = shoulderOf(HIP, 180);
+  return {
+    a: stand({ arm: { to: rel(s, 3, -26) } }),
+    b: stand({ arm: { to: rel(s, 6, 2), bend: -1 } }),
+    scene: (
+      <>
+        <rect x="58" y="-8" width="30" height="3" rx="1.5" className="a-metal" />
+        <circle cx="76" cy="-4" r="2.2" className="a-dark" />
+      </>
+    ),
+    gear: (j) => ({ back: band([76, -4], j.ha, rel(j.ha, 8, -6)) }),
+    track: hand,
+    scale: 0.86,
+  };
+}
+
+function superman(): Template {
+  return {
+    a: { hip: [56, 80], torso: 90, arm: { to: [100, 81] }, leg: { to: [21, 82] }, foot: 0 },
+    b: { hip: [56, 80], torso: 100, arm: { to: [98, 70] }, leg: { to: [22, 75] }, foot: 0, arch: 4 },
+    scene: mat(10, 106),
+    track: hand,
+  };
+}
+
+function renegadeRow(): Template {
+  const base = { hip: [56, 64] as V, torso: 105, leg: { to: [23, 77] as V }, toe: [20, 84] as V, arm2: { to: [80, 84] as V } };
+  return {
+    a: { ...base, arm: { to: [80, 84] } },
+    b: { ...base, arm: { pts: [[68, 52], [72, 64]] } },
+    gear: (j) => ({ back: dumbbell(rel(j.ha2, 0, -3)), front: dumbbell(rel(j.ha, 0, -1)) }),
+    scene: mat(12, 96),
+    track: hand,
+  };
+}
+
+function pikePushup(): Template {
+  return {
+    a: { hip: [54, 52], torso: 60, arm: { to: [88, 84] }, leg: { to: [36, 84] } },
+    b: { hip: [56, 56], torso: 45, arm: { to: [88, 84], bend: -1 }, leg: { to: [38, 84] } },
+    scene: mat(26, 98),
+    track: (j) => j.head,
+  };
+}
+
+function pullApart(): Template {
+  return {
+    a: standF({ armL: { to: [57, 32] }, armR: { to: [63, 32] } }),
+    b: standF({ armL: { to: [27, 28] }, armR: { to: [93, 28] } }),
+    gear: (j) => ({ front: band(j.ha, j.ha2, [(j.ha[0] + j.ha2[0]) / 2, (j.ha[1] + j.ha2[1]) / 2 + 1]) }),
+    track: hand,
+    bulge: 0.08,
+  };
+}
+
+function squatJump(): Template {
+  const h: V = [44, 68];
+  const s = shoulderOf(h, 145);
+  return {
+    a: { hip: h, torso: 145, arm: { to: rel(s, -6, 22) }, leg: { to: [60, 84] } },
+    b: stand({ hip: [60, 40], arm: { to: [62, -8] }, leg: { to: [60, 75] }, foot: 20 }),
+    track: hip,
+    scale: 0.86,
+  };
+}
+
+function wallSit(): Template {
+  return {
+    a: stand({ hip: [38, 49], arm: { to: [40, 52] }, leg: { to: [42, 84] } }),
+    b: { hip: [36, 66], torso: 180, arm: { to: [50, 63] }, leg: { pts: [[54, 66], [54, 84]] }, foot: 90 },
+    scene: wall(30),
+    track: hip,
+  };
+}
+
+function lateralLunge(): Template {
+  return {
+    a: standF({ armL: { to: [56, 44] }, armR: { to: [64, 44] } }),
+    b: { front: true, hip: [48, 60], armL: { to: [44, 52] }, armR: { to: [52, 52] }, legL: { to: [24, 84] }, legR: { to: [80, 84] } },
+    track: hip,
+  };
+}
+
+function pistol(): Template {
+  const h: V = [50, 72];
+  const s = shoulderOf(h, 150);
+  return {
+    a: stand({ arm: { to: rel(shoulderOf(HIP, 180), 26, 2) }, leg2: { to: [80, 74] } }),
+    b: { hip: h, torso: 150, arm: { to: rel(s, 26, 0) }, leg: { to: [58, 84] }, leg2: { to: [86, 74] }, foot2: 150 },
+    track: hip,
+  };
+}
+
+function boxJump(): Template {
+  const h: V = [40, 62];
+  const s = shoulderOf(h, 145);
+  return {
+    a: { hip: h, torso: 145, arm: { to: rel(s, -12, 18) }, leg: { to: [44, 84] } },
+    b: { hip: [80, 30], torso: 165, arm: { to: [98, 34] }, leg: { to: [80, 61] } },
+    scene: box(64, 62, 34, 23),
+    track: hip,
+    scale: 0.85,
+  };
+}
+
+function hamSlide(): Template {
+  const slider = (j: Joints) => ({ front: <rect x={j.an[0] - 3} y={83} width="9" height="2.2" rx="1" className="a-dark" /> });
+  return {
+    a: { hip: [50, 72], torso: -80, arm: { to: [44, 83] }, leg: { to: [86, 84] }, foot: 180 },
+    b: { hip: [52, 66], torso: -55, arm: { to: [42, 84] }, leg: { to: [70, 84] }, foot: 180 },
+    scene: mat(8, 104),
+    gear: slider,
+    track: ankle,
+  };
+}
+
+function donkeyKick(): Template {
+  const kneel: SidePose['leg'] = { pts: [[40, 83], [22, 83]] };
+  const p = (leg: SidePose['leg'], foot: number): SidePose => ({ hip: [40, 63], torso: 108, arm: { to: [64, 84] }, arm2: { to: [64, 84] }, leg, leg2: kneel, foot, foot2: 200 });
+  return {
+    a: p(kneel, 200),
+    b: p({ pts: [[22, 60], [21, 44]] }, -90),
+    scene: mat(12, 90),
+    track: ankle,
+  };
+}
+
+function sideLying(): Template {
+  const p = (legL: FrontPose['legL']): FrontPose => ({ front: true, hip: [44, 75], torso: 90, armL: { to: [52, 70] }, armR: { pts: [[80, 82], [90, 76]] }, legL, legR: { to: [10, 81] }, noFeet: true });
+  return { a: p({ to: [10, 72] }), b: p({ to: [14, 54] }), scene: mat(4, 104), track: ankle };
+}
+
+function bicycle(): Template {
+  const h: V = [58, 80];
+  const behind = (t: number): SidePose['arm'] => {
+    const s = shoulderOf(h, t);
+    return { pts: [rel(s, 4, -8), rel(s, -6, -9)] };
+  };
+  const bent: SidePose['leg'] = { pts: [[62, 62.5], [78, 66]] };
+  const straight: SidePose['leg'] = { to: [92, 70] };
+  return {
+    a: { hip: h, torso: -118, arm: behind(-118), leg: bent, leg2: straight, foot: 180, foot2: 180 },
+    b: { hip: h, torso: -118, arm: behind(-118), leg: straight, leg2: bent, foot: 180, foot2: 180 },
+    scene: mat(8, 104),
+    track: (j) => j.kn,
+  };
+}
+
+function legRaiseLying(): Template {
+  const h: V = [58, 80];
+  return {
+    a: { hip: h, torso: -90, arm: { to: [58, 83] }, leg: { to: [94, 79] }, foot: 180 },
+    b: { hip: h, torso: -90, arm: { to: [58, 83] }, leg: { to: [62, 46] }, foot: 180 },
+    scene: mat(6, 104),
+    track: ankle,
+  };
+}
+
+function hollowHold(): Template {
+  const h: V = [58, 80];
+  return {
+    a: { hip: h, torso: -100, arm: { to: rel(shoulderOf(h, -100), -24, -6) }, leg: { to: [93, 74] }, foot: 120 },
+    b: { hip: h, torso: -108, arm: { to: rel(shoulderOf(h, -108), -23, -9) }, leg: { to: [92, 69] }, foot: 120 },
+    scene: mat(6, 104),
+    track: ankle,
+  };
+}
+
+function mountainClimber(): Template {
+  const base = { hip: [56, 64] as V, torso: 105, arm: { to: [80, 84] as V } };
+  const knee: SidePose['leg'] = { pts: [[70, 72], [57, 81]] };
+  const back: SidePose['leg'] = { to: [23, 77] };
+  return {
+    a: { ...base, leg: knee, leg2: back, toe2: [20, 84] },
+    b: { ...base, leg: back, toe: [20, 84], leg2: knee },
+    scene: mat(12, 96),
+    track: (j) => j.kn,
+  };
+}
+
+function birdDog(): Template {
+  const kneel: SidePose['leg'] = { pts: [[40, 83], [22, 83]] };
+  const base = { hip: [40, 63] as V, torso: 108, arm2: { to: [64, 84] as V }, leg2: kneel, foot2: 200 };
+  return {
+    a: { ...base, arm: { to: [64, 84] }, leg: kneel, foot: 200 },
+    b: { ...base, arm: { to: [88, 52] }, leg: { to: [6, 60] }, foot: 0 },
+    scene: mat(4, 94),
+    track: hand,
+  };
+}
+
+function woodchop(): Template {
+  return {
+    a: standF({ armL: { to: [78, 12] }, armR: { to: [82, 12] }, legL: { to: [50, 84] }, legR: { to: [70, 84] } }),
+    b: standF({ torso: 190, armL: { to: [44, 54] }, armR: { to: [47, 55] }, legL: { to: [50, 84] }, legR: { to: [70, 84] } }),
+    scene: pulleyTower(104, 8),
+    gear: (j) => ({ back: line([102, 9], j.ha2), front: <circle cx={j.ha2[0]} cy={j.ha2[1]} r="2.4" className="a-dark" /> }),
+    track: (j) => j.ha2,
+  };
+}
+
+function reverseCrunch(): Template {
+  return {
+    a: { hip: [58, 80], torso: -90, arm: { to: [58, 83] }, leg: { pts: [[60, 62], [76, 62]] }, foot: 180 },
+    b: { hip: [62, 72], torso: -80, arm: { to: [60, 83] }, leg: { pts: [[54, 57], [70, 52]] }, foot: 180 },
+    scene: mat(8, 100),
+    track: (j) => j.kn,
+  };
+}
+
+function jumpingJack(): Template {
+  return {
+    a: standF({ armL: { to: [49, 51] }, armR: { to: [71, 51] }, legL: { to: [57, 84] }, legR: { to: [63, 84] } }),
+    b: standF({ hip: [60, 47], armL: { to: [46, 0] }, armR: { to: [74, 0] }, legL: { to: [40, 82] }, legR: { to: [80, 82] } }),
+    track: hand,
+    scale: 0.88,
+  };
+}
+
+function slam(): Template {
+  const ball = (j: Joints) => ({ front: <circle cx={j.ha[0]} cy={j.ha[1] - 1} r="5.5" className="a-dark" /> });
+  return {
+    a: stand({ arm: { to: [62, -4] } }),
+    b: { hip: [46, 60], torso: 125, arm: { to: [78, 78] }, leg: { to: [58, 84] } },
+    gear: ball,
+    track: hand,
+    scale: 0.86,
+  };
+}
+
 /** Plantillas por identificador estable. */
 export const TEMPLATES = {
   'bench-bar': () => benchPress('flat', 'bar'),
@@ -1309,8 +1617,10 @@ export const TEMPLATES = {
   'ohp-machine': () => ohpSeat('machine'),
   'lateral-db': () => lateralRaise(false),
   'lateral-cable': () => lateralRaise(true),
-  'front-raise': frontRaise,
-  'rear-fly': rearFly,
+  'front-raise': () => frontRaise(),
+  'front-raise-plate': () => frontRaise(true),
+  'rear-fly': () => rearFly(),
+  'rear-fly-cable': () => rearFly(true),
   'upright-row': uprightRow,
   'handstand-pushup': handstandPushup,
   'face-pull': facePull,
@@ -1403,130 +1713,60 @@ export const TEMPLATES = {
   'thoracic-rotation': () => quadruped(0, 0, true),
   'ankle-wall': ankleWall,
   'band-press': bandPress,
+  // Kettlebell, bandas y variantes
+  'bench-kb': () => benchPress('flat', 'kb'),
+  'pushup-incline': () => pushupVar('incline'),
+  'pushup-knee': () => pushupVar('knee'),
+  'pushup-decline': () => pushupVar('decline'),
+  'pullover-db': pulloverDb,
+  'inverted-row': invertedRow,
+  'row-kb': () => bentRow('kb'),
+  'pulldown-band': pulldownBand,
+  superman,
+  'renegade-row': renegadeRow,
+  'ohp-kb': () => ohpStand('kb'),
+  'ohp-band': () => ohpStand('band'),
+  'lateral-band': () => lateralRaise(false, true),
+  'pike-pushup': pikePushup,
+  'pull-apart': pullApart,
+  'curl-kb': () => curlStand('kb'),
+  'pushdown-band': () => pushdown(false, true),
+  'overhead-ext-kb': () => overheadExt('kb'),
+  'overhead-ext-cable': () => overheadExt('cable'),
+  'farmer-kb': () => farmer('kb'),
+  'squat-band': () => squat('band'),
+  'squat-box': () => squat('box'),
+  'squat-jump': squatJump,
+  'wall-sit': wallSit,
+  'lunge-bw': () => lunge('bw'),
+  'lunge-back': () => lunge('bw', true),
+  'lunge-bar': () => lunge('bar'),
+  'lunge-kb': () => lunge('kb'),
+  'lateral-lunge': lateralLunge,
+  'bulgarian-bw': () => bulgarian('bw'),
+  'step-up-bw': () => stepUp('bw'),
+  pistol,
+  'box-jump': boxJump,
+  'deadlift-db': () => deadlift('db', false),
+  'deadlift-kb': () => deadlift('kb', false),
+  'rdl-kb': () => rdl('kb'),
+  'rdl-single-db': () => rdl('db', true),
+  'ham-slide': hamSlide,
+  'hip-thrust-db': () => hipThrust('db'),
+  'hip-thrust-bw': () => hipThrust('bw'),
+  'donkey-kick': donkeyKick,
+  'side-lying': sideLying,
+  'sumo-kb': () => deadlift('kb', true),
+  bicycle,
+  'leg-raise-lying': legRaiseLying,
+  hollow: hollowHold,
+  'mountain-climber': mountainClimber,
+  'bird-dog': birdDog,
+  woodchop,
+  'reverse-crunch': reverseCrunch,
+  'thruster-db': () => thruster('db'),
+  'jumping-jack': jumpingJack,
+  slam,
 } satisfies Record<string, () => Template>;
 
 export type TemplateKey = keyof typeof TEMPLATES;
-
-/** Ejercicios de la biblioteca → plantilla. Cada uno tiene una asignación explícita. */
-export const EXERCISE_TEMPLATE: Record<string, TemplateKey> = {
-  'press-banca': 'bench-bar',
-  'press-inclinado-barra': 'incline-bar',
-  'press-declinado-barra': 'decline-bar',
-  'press-banca-mancuernas': 'bench-db',
-  'press-inclinado-mancuernas': 'incline-db',
-  'aperturas-mancuernas': 'fly-db',
-  'cruce-poleas': 'cable-cross',
-  'press-pecho-maquina': 'chest-press-machine',
-  'pec-deck': 'pec-deck',
-  flexiones: 'pushup',
-  'fondos-pecho': 'dip',
-  'fondos-lastrados': 'dip-weighted',
-  'fondos-asistidos': 'dip-assisted',
-  'peso-muerto': 'deadlift',
-  dominadas: 'pullup',
-  'dominadas-lastradas': 'pullup-weighted',
-  'dominadas-asistidas': 'pullup-assisted',
-  'chin-ups': 'pullup',
-  'jalon-pecho': 'lat-pulldown',
-  'jalon-agarre-cerrado': 'lat-pulldown',
-  'remo-barra': 'row-bar',
-  'remo-mancuerna': 'row-db-one',
-  'remo-polea-baja': 'row-cable',
-  'remo-maquina': 'row-machine',
-  'remo-t': 'row-landmine',
-  'pullover-polea': 'pullover-cable',
-  'face-pull': 'face-pull',
-  hiperextensiones: 'back-extension',
-  encogimientos: 'shrug',
-  'press-militar': 'ohp-bar',
-  'press-hombro-mancuernas': 'ohp-db',
-  'press-arnold': 'ohp-db',
-  'press-hombro-maquina': 'ohp-machine',
-  'elevaciones-laterales': 'lateral-db',
-  'elevaciones-laterales-polea': 'lateral-cable',
-  'elevaciones-frontales': 'front-raise',
-  pajaros: 'rear-fly',
-  'reverse-pec-deck': 'reverse-pec-deck',
-  'remo-al-menton': 'upright-row',
-  'pino-flexiones': 'handstand-pushup',
-  'curl-barra': 'curl-bar',
-  'curl-barra-z': 'curl-ez',
-  'curl-mancuernas': 'curl-db',
-  'curl-martillo': 'curl-db',
-  'curl-inclinado': 'curl-incline',
-  'curl-predicador': 'curl-preacher',
-  'curl-polea': 'curl-cable',
-  'curl-concentrado': 'curl-concentration',
-  'press-cerrado': 'bench-bar',
-  'extension-polea': 'pushdown-bar',
-  'extension-cuerda': 'pushdown-rope',
-  'press-frances': 'skullcrusher',
-  'extension-sobre-cabeza': 'overhead-ext',
-  'patada-triceps': 'kickback',
-  'fondos-banco': 'bench-dip',
-  'curl-muneca': 'wrist-curl',
-  'curl-muneca-inverso': 'wrist-curl',
-  'paseo-granjero': 'farmer',
-  'colgado-barra': 'dead-hang',
-  sentadilla: 'squat-back',
-  'sentadilla-frontal': 'squat-front',
-  'sentadilla-goblet': 'squat-goblet',
-  'sentadilla-hack': 'hack-squat',
-  prensa: 'leg-press',
-  'extension-cuadriceps': 'leg-extension',
-  zancadas: 'lunge',
-  bulgara: 'bulgarian',
-  'step-up': 'step-up',
-  'sentadilla-peso-corporal': 'squat-bw',
-  'sissy-squat': 'sissy',
-  'peso-muerto-rumano': 'rdl-bar',
-  'peso-muerto-rumano-mancuernas': 'rdl-db',
-  'peso-muerto-una-pierna': 'rdl-single',
-  'curl-femoral-tumbado': 'leg-curl-lying',
-  'curl-femoral-sentado': 'leg-curl-seated',
-  'buenos-dias': 'good-morning',
-  'nordic-curl': 'nordic',
-  'hip-thrust': 'hip-thrust',
-  'puente-gluteo': 'glute-bridge',
-  'patada-gluteo-polea': 'cable-kickback',
-  'abduccion-maquina': 'abduction',
-  'aduccion-maquina': 'adduction',
-  'peso-muerto-sumo': 'deadlift-sumo',
-  'monster-walk': 'monster-walk',
-  'gemelo-de-pie': 'calf-machine',
-  'gemelo-sentado': 'calf-seated',
-  'gemelo-prensa': 'leg-press-calf',
-  'gemelo-peso-corporal': 'calf-single',
-  plancha: 'plank',
-  'plancha-lateral': 'side-plank',
-  crunch: 'crunch',
-  'crunch-polea': 'cable-crunch',
-  'elevacion-piernas': 'hanging-leg-raise',
-  'rueda-abdominal': 'ab-wheel',
-  'russian-twist': 'russian-twist',
-  pallof: 'pallof',
-  'dead-bug': 'dead-bug',
-  cargada: 'clean',
-  arrancada: 'snatch',
-  thruster: 'thruster',
-  'kettlebell-swing': 'kb-swing',
-  burpees: 'burpee',
-  'turkish-getup': 'get-up',
-  correr: 'run',
-  cinta: 'treadmill',
-  bicicleta: 'bike',
-  'remo-ergometro': 'rower',
-  eliptica: 'elliptical',
-  comba: 'jump-rope',
-  caminar: 'walk',
-  escaladora: 'stair',
-  'movilidad-cadera': 'hip-90-90',
-  'estiramiento-isquios': 'hamstring-stretch',
-  'dislocaciones-banda': 'band-dislocate',
-  'gato-camello': 'cat-cow',
-  'rotacion-toracica': 'thoracic-rotation',
-  'tobillo-pared': 'ankle-wall',
-  'remo-banda': 'row-band',
-  'press-banda': 'band-press',
-  'curl-banda': 'curl-band',
-};
