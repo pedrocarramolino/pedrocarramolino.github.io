@@ -3,7 +3,7 @@
 export type StudentStatus = 'active' | 'inactive' | 'archived';
 export type LessonStatus = 'scheduled' | 'completed' | 'cancelled';
 export type TaskPriority = 'low' | 'normal' | 'high';
-export type AssignmentStatus = 'pending' | 'in_progress' | 'completed' | 'reviewed';
+export type AssignmentStatus = 'pending' | 'completed' | 'not_completed';
 export type NoteKind = 'observation' | 'achievement' | 'difficulty' | 'improvement';
 export type GoalStatus = 'active' | 'achieved' | 'dropped';
 
@@ -120,6 +120,8 @@ export interface Task {
   lesson_id: string | null;
   copied_from: string | null;
   copy_key?: string | null;
+  /** Tarea no completada de la semana anterior de la que procede esta (continuación). */
+  carried_from?: string | null;
   created_at: string;
   updated_at: string;
 }
@@ -132,7 +134,6 @@ export interface Assignment {
   status: AssignmentStatus;
   feedback: string;
   completed_at: string | null;
-  reviewed_at: string | null;
   updated_at: string;
 }
 

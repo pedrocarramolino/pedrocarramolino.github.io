@@ -8,7 +8,7 @@ import { Avatar, Card, CardHeader, EmptyState, ListSkeleton, Stat } from '@/comp
 import { cn } from '@/components/ui/cn';
 import { useUi } from '@/components/layout/ui-store';
 import { studentName, useActivity, useLessonsRange, useLookup, usePendingAssignments, useProfile, useTasksWeek } from '@/hooks/data';
-import { isDone } from '@/lib/labels';
+import { isPending } from '@/lib/labels';
 import { cvar } from '@/lib/colors';
 import { WEEKDAYS_SHORT, capitalize, durationLabel, fmt, hhmm, isSameDay, relativeDay, startOfDay, timeAgo, weekKey, weekStartOf } from '@/lib/dates';
 import type { ActivityEntry, Lesson, TaskWithAssignments } from '@/lib/types';
@@ -52,7 +52,7 @@ export default function Dashboard() {
   const upcoming = lessons.filter((l) => new Date(l.starts_at) >= addDays(today, 1)).slice(0, 6);
   const tasks = useMemo(() => tasksQ.data ?? [], [tasksQ.data]);
   const weekAsg = tasks.flatMap((t) => t.assignments);
-  const weekPending = weekAsg.filter((a) => !isDone(a.status)).length;
+  const weekPending = weekAsg.filter((a) => isPending(a.status)).length;
 
   // clases próximas (7 días) sin contenido previsto ni tareas para esa semana
   const toPrepare = useMemo(() => {
