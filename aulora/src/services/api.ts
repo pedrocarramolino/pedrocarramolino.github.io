@@ -43,6 +43,7 @@ import {
 import { firebaseAuth, firestore } from '@/lib/firebase';
 import { trackWrite } from '@/lib/sync-status';
 import { norm } from '@/lib/search';
+import { normalizeStatus } from '@/lib/labels';
 import type {
   ActivityEntry,
   Assignment,
@@ -658,7 +659,7 @@ export const seriesApi = {
 // ------------------------------------------------------------------ Tareas
 export type TaskInput = Partial<Omit<Task, 'id' | 'owner_id' | 'created_at' | 'updated_at' | 'copied_from'>>;
 
-type StoredAssignment = { status: AssignmentStatus; feedback: string; completed_at: string | null; reviewed_at: string | null; updated_at: string };
+type StoredAssignment = { status: AssignmentStatus; feedback: string; completed_at: string | null; updated_at: string };
 type StoredTask = Omit<Task, 'id' | 'owner_id'> & {
   student_ids: string[];
   pending_ids: string[];
@@ -677,27 +678,105 @@ const TASK_DEFAULTS = {
   lesson_id: null,
   copied_from: null,
   copy_key: null,
+  carried_from: null,
 };
 
-const newAssignment = (): StoredAssignment => ({ status: 'pending', feedback: '', completed_at: null, reviewed_at: null, updated_at: now() });
+const newAssignment = (): StoredAssignment => ({ status: 'pending', feedback: '', completed_at: null, updated_at: now() });
 
 /** Campos derivados de las asignaciones, usados en las consultas. */
 function derive<T extends { assignments: Record<string, unknown> }>(t: T) {
   const asg = t.assignments as Record<string, StoredAssignment>;
   const ids = Object.keys(asg).sort();
-  const pending = ids.filter((id) => asg[id].status === 'pending' || asg[id].status === 'in_progress');
+  const pending = ids.filter((id) => normalizeStatus(asg[id].status) === 'pending');
   return { ...t, student_ids: ids, pending_ids: pending, has_pending: pending.length > 0 };
 }
 
 function stamp(a: StoredAssignment, status: AssignmentStatus): StoredAssignment {
-  const done = status === 'completed' || status === 'reviewed';
+  const { reviewed_at: _r, ...rest } = a as StoredAssignment & { reviewed_at?: unknown };
+  void _r;
   return {
-    ...a,
+    ...rest,
     status,
-    completed_at: done ? (a.completed_at ?? now()) : null,
-    reviewed_at: status === 'reviewed' ? (a.reviewed_at ?? now()) : null,
+    completed_at: status === 'completed' ? (normalizeStatus(a.status) === 'completed' && a.completed_at ? a.completed_at : now()) : null,
     updated_at: now(),
   };
+}
+
+// ---------------------------------------------- Tareas no completadas → semana siguiente
+const nextWeekKey = (week: string) => new Date(Date.parse(week + 'T00:00:00Z') + 7 * 86400_000).toISOString().slice(0, 10);
+/**
+ * Id de la continuación de una tarea en la semana siguiente. Es determinista
+ * (tarea de origen + semana de destino): por mucho que se pulse, se recargue
+ * o se use desde varios dispositivos, solo puede existir una.
+ */
+export const carryId = (taskId: string, week: string) => `carry_${taskId}_${nextWeekKey(week)}`;
+
+/** Una continuación sin tocar (pendiente y sin comentarios) se puede retirar sin perder nada. */
+const untouched = (a: StoredAssignment | undefined) => !!a && normalizeStatus(a.status) === 'pending' && !a.feedback;
+
+/**
+ * Lleva a la semana siguiente las asignaciones marcadas como «No completada»
+ * (como pendientes) y retira las continuaciones sin tocar de las que dejan de
+ * estarlo. La tarea original no cambia: conserva su estado e historial.
+ */
+async function syncCarryOver(b: Batcher, tid: string, src: StoredTask, add: string[], drop: string[]) {
+  if (!add.length && !drop.length) return;
+  const week = nextWeekKey(src.week_start);
+  const id = carryId(tid, src.week_start);
+  const r = ref('tasks', id);
+  const cur = (await readDoc(r)).data() as StoredTask | undefined;
+  if (!cur) {
+    if (!add.length) return;
+    const shift = (k: string) => nextWeekKey(k);
+    const data = derive({
+      ...TASK_DEFAULTS,
+      title: src.title,
+      description: src.description ?? '',
+      category_id: src.category_id ?? null,
+      priority: src.priority ?? 'normal',
+      week_start: week,
+      assigned_on: week,
+      due_on: src.due_on ? shift(src.due_on) : null,
+      notes: src.notes ?? '',
+      group_id: src.group_id ?? null,
+      lesson_id: null,
+      carried_from: tid,
+      assignments: Object.fromEntries(add.map((sid) => [sid, newAssignment()])),
+      created_at: now(),
+      updated_at: now(),
+    });
+    b.set(r, data);
+    b.log('tasks', 'created', `${src.title} · pasa a la semana del ${week.split('-').reverse().join('/')}`, id);
+    return;
+  }
+  const assignments = { ...cur.assignments };
+  let changed = false;
+  for (const sid of add) if (!assignments[sid]) (assignments[sid] = newAssignment()), (changed = true);
+  for (const sid of drop) if (untouched(assignments[sid])) delete assignments[sid], (changed = true);
+  if (!changed) return;
+  if (!Object.keys(assignments).length) b.delete(r);
+  else b.set(r, derive({ ...cur, assignments, updated_at: now() }));
+}
+
+/** Aplica estados a una tarea y actualiza su continuación en la semana siguiente. */
+async function applyStatuses(b: Batcher, tid: string, sids: string[] | 'all', status: AssignmentStatus) {
+  const t = (await readDoc(ref('tasks', tid))).data() as StoredTask | undefined;
+  if (!t) return;
+  const assignments = { ...t.assignments };
+  const add: string[] = [];
+  const drop: string[] = [];
+  for (const sid of sids === 'all' ? Object.keys(assignments) : sids) {
+    const a = assignments[sid];
+    if (!a) continue;
+    const before = normalizeStatus(a.status);
+    assignments[sid] = stamp(a, status);
+    if (status === 'not_completed') {
+      if (before !== 'not_completed') add.push(sid);
+    }
+    else if (before === 'not_completed') drop.push(sid);
+  }
+  b.set(ref('tasks', tid), derive({ ...t, assignments, updated_at: now() }));
+  await syncCarryOver(b, tid, t, add, drop);
 }
 
 function toTask(id: string, d: DocumentData): TaskWithAssignments {
@@ -713,7 +792,11 @@ function toTask(id: string, d: DocumentData): TaskWithAssignments {
     id,
     owner_id: owner,
     assignments: Object.entries(asg)
-      .map(([sid, a]) => ({ id: `${id}__${sid}`, owner_id: owner, task_id: id, student_id: sid, ...a }) as Assignment)
+      .map(([sid, a]) => {
+        const { reviewed_at: _r, ...rest } = a as StoredAssignment & { reviewed_at?: unknown };
+        void _r;
+        return { id: `${id}__${sid}`, owner_id: owner, task_id: id, student_id: sid, ...rest, status: normalizeStatus(a.status) } as Assignment;
+      })
       .sort((a, b) => a.student_id.localeCompare(b.student_id)),
   };
 }
@@ -848,25 +931,14 @@ export const taskApi = {
         byTask.set(taskId, [...(byTask.get(taskId) ?? []), studentId]);
       }
       const b = new Batcher();
-      for (const [tid, sids] of byTask) {
-        const t = (await readDoc(ref('tasks', tid))).data() as StoredTask | undefined;
-        if (!t) continue;
-        const assignments = { ...t.assignments };
-        for (const sid of sids) if (assignments[sid]) assignments[sid] = stamp(assignments[sid], status);
-        b.set(ref('tasks', tid), derive({ ...t, assignments, updated_at: now() }));
-      }
+      for (const [tid, sids] of byTask) await applyStatuses(b, tid, sids, status);
       b.commitInBackground();
       return [] as Assignment[];
     }),
   setStatusForTasks: (taskIds: string[], status: AssignmentStatus) =>
     safe(async () => {
       const b = new Batcher();
-      for (const tid of taskIds) {
-        const t = (await readDoc(ref('tasks', tid))).data() as StoredTask | undefined;
-        if (!t) continue;
-        const assignments = Object.fromEntries(Object.entries(t.assignments).map(([sid, a]) => [sid, stamp(a, status)]));
-        b.set(ref('tasks', tid), derive({ ...t, assignments, updated_at: now() }));
-      }
+      for (const tid of taskIds) await applyStatuses(b, tid, 'all', status);
       b.commitInBackground();
       return [] as Assignment[];
     }),
@@ -940,7 +1012,7 @@ export const taskApi = {
   copiesIn: (targetWeek: string) =>
     safe(async () => (await tasksOf(query(col('tasks'), where('week_start', '==', targetWeek)))).filter((t) => t.copy_key).map((t) => ({ copied_from: t.copied_from, copy_key: t.copy_key ?? null }))),
   pendingAssignments: () =>
-    safe(async () => (await tasksOf(query(col('tasks'), where('has_pending', '==', true)))).flatMap((t) => t.assignments.filter((a) => a.status === 'pending' || a.status === 'in_progress'))),
+    safe(async () => (await tasksOf(query(col('tasks'), where('has_pending', '==', true)))).flatMap((t) => t.assignments.filter((a) => a.status === 'pending'))),
 };
 
 // ------------------------------------------------------------------ Seguimiento
@@ -1116,7 +1188,7 @@ export const live = {
   pending: () =>
     liveQuery(
       () => query(col('tasks'), where('has_pending', '==', true)),
-      (d) => asTasks(d).flatMap((t) => t.assignments.filter((a) => a.status === 'pending' || a.status === 'in_progress')),
+      (d) => asTasks(d).flatMap((t) => t.assignments.filter((a) => a.status === 'pending')),
     ),
   notes: (sid: string) => liveQuery(() => query(col('notes'), where('student_id', '==', sid)), (d) => asList<ProgressNote>(d).sort(byNotedDesc)),
   allNotes: () => liveQuery(() => col('notes'), (d) => asList<ProgressNote>(d).sort(byNotedDesc)),

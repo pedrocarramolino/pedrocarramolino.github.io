@@ -14,19 +14,34 @@ export const LESSON_STATUS: Record<LessonStatus, string> = {
 
 export const ASSIGNMENT_STATUS: Record<AssignmentStatus, string> = {
   pending: 'Pendiente',
-  in_progress: 'En proceso',
-  completed: 'Completada',
-  reviewed: 'Revisada',
+  completed: 'Completa',
+  not_completed: 'No completada',
 };
 
-export const ASSIGNMENT_ORDER: AssignmentStatus[] = ['pending', 'in_progress', 'completed', 'reviewed'];
+/** Orden cíclico al pulsar el estado: Pendiente → Completa → No completada → Pendiente. */
+export const ASSIGNMENT_ORDER: AssignmentStatus[] = ['pending', 'completed', 'not_completed'];
 
 export function nextStatus(s: AssignmentStatus): AssignmentStatus {
   return ASSIGNMENT_ORDER[(ASSIGNMENT_ORDER.indexOf(s) + 1) % ASSIGNMENT_ORDER.length];
 }
 
 export function isDone(s: AssignmentStatus): boolean {
-  return s === 'completed' || s === 'reviewed';
+  return s === 'completed';
+}
+
+/** Aún por hacer (las no completadas pasan a la semana siguiente como pendientes). */
+export function isPending(s: AssignmentStatus): boolean {
+  return s === 'pending';
+}
+
+/**
+ * Estados guardados con el sistema anterior: «En proceso» cuenta como
+ * pendiente y «Revisada» como completa.
+ */
+export function normalizeStatus(s: unknown): AssignmentStatus {
+  if (s === 'completed' || s === 'reviewed') return 'completed';
+  if (s === 'not_completed') return 'not_completed';
+  return 'pending';
 }
 
 export const PRIORITY: Record<TaskPriority, string> = {

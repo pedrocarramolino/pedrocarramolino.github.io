@@ -12,7 +12,7 @@ import { QuickAddTask, TaskRow, WeekNav, aggregateStatus } from '@/components/ta
 import { DuplicateDialog } from '@/components/tasks/DuplicateDialog';
 import { useUi } from '@/components/layout/ui-store';
 import { studentName, useLookup, useTasksWeek } from '@/hooks/data';
-import { ASSIGNMENT_STATUS, isDone } from '@/lib/labels';
+import { ASSIGNMENT_STATUS, isDone, isPending } from '@/lib/labels';
 import { cvar } from '@/lib/colors';
 import { matches } from '@/lib/search';
 import { weekKey, weekLabel, fromDateKey } from '@/lib/dates';
@@ -65,7 +65,7 @@ function TasksPage() {
       for (const a of t.assignments) {
         const e = m.get(a.student_id) ?? { total: 0, pending: 0 };
         e.total++;
-        if (!isDone(a.status)) e.pending++;
+        if (isPending(a.status)) e.pending++;
         m.set(a.student_id, e);
       }
     return m;
@@ -345,7 +345,7 @@ function StudentCard({
   if (hideEmpty && !tasks.length) return null;
   const own = (t: TaskWithAssignments) => t.assignments.filter((a) => a.student_id === student.id);
   const all = [...tasks, ...groupTasks];
-  const pending = all.filter((t) => own(t).some((a) => !isDone(a.status))).length;
+  const pending = all.filter((t) => own(t).some((a) => isPending(a.status))).length;
   const byGroup = new Map<string, number>();
   for (const t of groupTasks) byGroup.set(t.group_id!, (byGroup.get(t.group_id!) ?? 0) + 1);
 

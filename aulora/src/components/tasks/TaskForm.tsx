@@ -8,7 +8,8 @@ import { StudentMultiPicker } from '@/components/ui/pickers';
 import { cn } from '@/components/ui/cn';
 import { studentName, useAction, useLookup } from '@/hooks/data';
 import { taskApi } from '@/services/api';
-import { ASSIGNMENT_STATUS, PRIORITY } from '@/lib/labels';
+import { ASSIGNMENT_STATUS, PRIORITY, nextStatus } from '@/lib/labels';
+import { StatusIcon } from './parts';
 import { cvar } from '@/lib/colors';
 import { fromDateKey, toDateKey, weekKey, weekLabel } from '@/lib/dates';
 import type { AssignmentStatus, TaskPriority } from '@/lib/types';
@@ -34,7 +35,6 @@ export function TaskForm({ draft, onClose }: { draft: TaskDraft; onClose: () => 
   const [statuses, setStatuses] = useState<Record<string, AssignmentStatus>>(
     Object.fromEntries((existing?.assignments ?? []).map((a) => [a.id, a.status])),
   );
-  const [initialStatus, setInitialStatus] = useState<AssignmentStatus>('pending');
   const [error, setError] = useState<string>();
 
   const titles = bulk ? title.split('\n').map((t) => t.trim()).filter(Boolean) : [title.trim()].filter(Boolean);
@@ -58,12 +58,9 @@ export function TaskForm({ draft, onClose }: { draft: TaskDraft; onClose: () => 
         return 1;
       }
       const target = mode === 'group' ? { ids: [] as string[], group: groupId } : { ids: studentIds, group: null };
-      const createdIds: string[] = [];
       for (const t of titles) {
-        const created = await taskApi.create({ ...fields, title: t, lesson_id: draft.lessonId ?? null }, target.ids, target.group);
-        createdIds.push(created.id);
+        await taskApi.create({ ...fields, title: t, lesson_id: draft.lessonId ?? null }, target.ids, target.group);
       }
-      if (initialStatus !== 'pending') await taskApi.setStatusForTasks(createdIds, initialStatus);
       return titles.length;
     },
     {
@@ -196,18 +193,21 @@ export function TaskForm({ draft, onClose }: { draft: TaskDraft; onClose: () => 
                     <div key={a.id} className="flex items-center gap-2.5 px-3 py-2">
                       <Avatar name={studentName(s)} photo={s?.photo} color={s?.color} size={24} />
                       <span className="min-w-0 flex-1 truncate text-sm">{studentName(s)}</span>
-                      <Select
-                        aria-label={`Estado de ${studentName(s)}`}
-                        className="h-8 w-36"
-                        value={statuses[a.id] ?? a.status}
-                        onChange={(e) => setStatuses((st) => ({ ...st, [a.id]: e.target.value as AssignmentStatus }))}
-                      >
-                        {Object.entries(ASSIGNMENT_STATUS).map(([k, v]) => (
-                          <option key={k} value={k}>
-                            {v}
-                          </option>
-                        ))}
-                      </Select>
+                      {(() => {
+                        const cur = statuses[a.id] ?? a.status;
+                        return (
+                          <button
+                            type="button"
+                            data-status={cur}
+                            aria-label={`Estado de ${studentName(s)}: ${ASSIGNMENT_STATUS[cur]}. Cambiar a ${ASSIGNMENT_STATUS[nextStatus(cur)]}`}
+                            onClick={() => setStatuses((st) => ({ ...st, [a.id]: nextStatus(cur) }))}
+                            className="flex h-8 items-center gap-1.5 rounded-md px-2 text-[13px] text-fg-2 hover:bg-surface-2"
+                          >
+                            <StatusIcon status={cur} />
+                            {ASSIGNMENT_STATUS[cur]}
+                          </button>
+                        );
+                      })()}
                     </div>
                   );
                 })}
@@ -244,17 +244,6 @@ export function TaskForm({ draft, onClose }: { draft: TaskDraft; onClose: () => 
           <Field label="Prioridad">
             <Segmented value={priority} onChange={setPriority} options={(Object.keys(PRIORITY) as TaskPriority[]).map((p) => ({ value: p, label: PRIORITY[p] }))} />
           </Field>
-          {!editing ? (
-            <Field label="Estado inicial">
-              <Select value={initialStatus} onChange={(e) => setInitialStatus(e.target.value as AssignmentStatus)} className="w-40">
-                {Object.entries(ASSIGNMENT_STATUS).map(([k, v]) => (
-                  <option key={k} value={k}>
-                    {v}
-                  </option>
-                ))}
-              </Select>
-            </Field>
-          ) : null}
         </div>
 
         <Field label="Descripción">

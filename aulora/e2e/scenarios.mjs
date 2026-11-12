@@ -307,10 +307,10 @@ export async function run({ browser, base, shots, admin }) {
 
   await step('cambiar el estado de una tarea', async () => {
     const row = page.locator('div.group').filter({ hasText: 'Estudio nº 4' }).first();
-    await row.getByRole('button', { name: /Estado: Pendiente/ }).click();
-    await row.getByRole('button', { name: /Estado: En proceso/ }).waitFor();
+    await row.getByRole('button', { name: /Estado: Pendiente\. Cambiar a Completa/ }).click();
+    await row.getByRole('button', { name: /Estado: Completa\. Cambiar a No completada/ }).waitFor();
     const t = (await docs('tasks')).find((x) => x.title === 'Estudio nº 4');
-    expect(statuses(t)[0] === 'in_progress', statuses(t).join());
+    expect(statuses(t)[0] === 'completed', statuses(t).join());
   });
 
   await step('tarea con formulario: varios alumnos y categoría', async () => {
@@ -399,11 +399,107 @@ export async function run({ browser, base, shots, admin }) {
     await page.goto(`${base}/buscar`);
     await page.getByLabel('Categoría').selectOption({ label: 'Técnica' });
     await page.getByText('Escalas mayores').first().waitFor();
-    await page.getByLabel('Estado de la tarea').selectOption({ label: 'En proceso' });
+    await page.getByLabel('Estado de la tarea').selectOption({ label: 'Completa' });
     await page.getByText('Estudio nº 4').first().waitFor();
-    expect((await page.getByText('Escalas mayores').count()) === 0, 'con estado «En proceso» no debería aparecer «Escalas mayores»');
-    await page.getByLabel('Estado de la tarea').selectOption({ label: 'Revisada' });
+    expect((await page.getByText('Escalas mayores').count()) === 0, 'con estado «Completa» no debería aparecer «Escalas mayores»');
+    await page.getByLabel('Estado de la tarea').selectOption({ label: 'No completada' });
     await page.getByText('Sin resultados').waitFor();
+    // solo existen los tres estados
+    const opts = await page.getByLabel('Estado de la tarea').locator('option').allTextContents();
+    expect(JSON.stringify(opts.slice(1)) === JSON.stringify(['Pendiente', 'Completa', 'No completada']), opts.join());
+  });
+
+  await step('«No completada» pasa a la semana siguiente como pendiente (alumno y grupo)', async () => {
+    // semanas aisladas para no interferir con el resto de pruebas
+    const wk = key(addDays(thisMonday, 21));
+    const next = key(addDays(thisMonday, 28));
+    await page.goto(`${base}/tareas?semana=${wk}`);
+    const hugo = page.getByLabel('Añadir tarea a Hugo…');
+    await hugo.fill('Lectura a primera vista');
+    await hugo.press('Enter');
+    const grp = page.getByLabel('Añadir tarea al grupo…');
+    await grp.fill('Ritmo en grupo');
+    await grp.press('Enter');
+    await page.getByText('Ritmo en grupo').waitFor();
+    // descripción y observaciones para comprobar que se conservan
+    await page.getByRole('button', { name: 'Lectura a primera vista' }).first().click();
+    const dlg = page.getByRole('dialog');
+    await dlg.getByLabel('Descripción').fill('Páginas 4 y 5');
+    await dlg.getByLabel('Observaciones').fill('Contar en voz alta');
+    await dlg.getByRole('button', { name: 'Guardar' }).click();
+    await dlg.waitFor({ state: 'detached' });
+    const row = (title) => page.locator('div.group').filter({ hasText: title }).first();
+    const btn = (title, st) => row(title).getByRole('button', { name: new RegExp(`^Estado: ${st}\\.`) });
+    const all = async () => docs('tasks');
+    const orig = (await all()).find((t) => t.title === 'Lectura a primera vista');
+    const carry = async (id) => (await all()).filter((t) => t.carried_from === id);
+
+    // 1. Pendiente → Completa
+    await btn('Lectura a primera vista', 'Pendiente').click();
+    await btn('Lectura a primera vista', 'Completa').waitFor();
+    expect(statuses((await all()).find((t) => t.id === orig.id))[0] === 'completed', 'debería estar completa');
+    expect((await carry(orig.id)).length === 0, 'completa no debería pasar a la semana siguiente');
+    // 2. Completa → No completada
+    await btn('Lectura a primera vista', 'Completa').click();
+    await btn('Lectura a primera vista', 'No completada').waitFor();
+    await row('Lectura a primera vista').getByText('No completada', { exact: true }).waitFor();
+    // 3. aparece en la semana siguiente como pendiente, con los mismos datos
+    let c = await carry(orig.id);
+    expect(c.length === 1, `continuaciones: ${c.length}`);
+    expect(c[0].week_start === next && statuses(c[0]).join() === 'pending', `${c[0].week_start} ${statuses(c[0])}`);
+    expect(
+      c[0].title === orig.title && c[0].description === 'Páginas 4 y 5' && c[0].notes === 'Contar en voz alta' && c[0].category_id === orig.category_id && JSON.stringify(Object.keys(c[0].assignments)) === JSON.stringify(Object.keys(orig.assignments)),
+      'la continuación debería conservar los datos',
+    );
+    // 4. la original sigue como «No completada»
+    expect(statuses((await all()).find((t) => t.id === orig.id))[0] === 'not_completed', 'la original debería seguir no completada');
+    // 5. pulsar varias veces no duplica
+    for (const st of ['No completada', 'Pendiente', 'Completa']) {
+      await btn('Lectura a primera vista', st).click();
+      await btn('Lectura a primera vista', st === 'No completada' ? 'Pendiente' : st === 'Pendiente' ? 'Completa' : 'No completada').waitFor();
+    }
+    c = await carry(orig.id);
+    expect(c.length === 1 && Object.keys(c[0].assignments).length === 1, `continuaciones tras varios toques: ${c.length}`);
+    // 6. tras recargar sigue todo guardado
+    await page.reload();
+    await btn('Lectura a primera vista', 'No completada').waitFor();
+    await page.goto(`${base}/tareas?semana=${next}`);
+    await btn('Lectura a primera vista', 'Pendiente').waitFor();
+    await row('Lectura a primera vista').getByText('Arrastrada de la semana anterior').waitFor();
+    // 7. cambiar la continuación no afecta a la original
+    await btn('Lectura a primera vista', 'Pendiente').click();
+    await btn('Lectura a primera vista', 'Completa').waitFor();
+    const after = await all();
+    expect(statuses(after.find((t) => t.id === orig.id))[0] === 'not_completed', 'la original no debería cambiar');
+    expect(statuses(after.find((t) => t.carried_from === orig.id))[0] === 'completed', 'la continuación debería estar completa');
+    // la continuación ya trabajada se conserva aunque la original vuelva a pendiente
+    await page.goto(`${base}/tareas?semana=${wk}`);
+    await btn('Lectura a primera vista', 'No completada').click();
+    await btn('Lectura a primera vista', 'Pendiente').waitFor();
+    c = await carry(orig.id);
+    expect(c.length === 1 && statuses(c[0])[0] === 'completed', 'la continuación trabajada no debería borrarse');
+
+    // 8. grupo: todos los integrantes pasan juntos y conserva el grupo
+    const g = (await all()).find((t) => t.title === 'Ritmo en grupo');
+    await btn('Ritmo en grupo', 'Pendiente').click();
+    await btn('Ritmo en grupo', 'Completa').click();
+    await btn('Ritmo en grupo', 'No completada').waitFor();
+    c = await carry(g.id);
+    expect(c.length === 1 && c[0].group_id === g.group_id && Object.keys(c[0].assignments).length === Object.keys(g.assignments).length, 'continuación del grupo');
+    expect(statuses(c[0]).every((x) => x === 'pending'), statuses(c[0]).join());
+    // ficha del grupo y del alumno: aparece en la semana siguiente marcada como arrastrada
+    await page.goto(`${base}/grupos/${g.group_id}`);
+    await page.locator('div.group').filter({ hasText: 'Ritmo en grupo' }).filter({ hasText: 'Arrastrada de la semana anterior' }).first().waitFor();
+    // un toque más (→ Pendiente) retira la continuación que aún no se ha tocado
+    await page.goto(`${base}/tareas?semana=${wk}`);
+    await btn('Ritmo en grupo', 'No completada').click();
+    await btn('Ritmo en grupo', 'Pendiente').waitFor();
+    expect((await carry(g.id)).length === 0, 'la continuación sin tocar debería retirarse');
+    // y se puede volver a marcar sin duplicados
+    await btn('Ritmo en grupo', 'Pendiente').click();
+    await btn('Ritmo en grupo', 'Completa').click();
+    await btn('Ritmo en grupo', 'No completada').waitFor();
+    expect((await carry(g.id)).length === 1, 'una sola continuación');
   });
 
   await step('panel de inicio con datos', async () => {

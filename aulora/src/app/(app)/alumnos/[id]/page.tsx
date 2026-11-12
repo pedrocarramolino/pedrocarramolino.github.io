@@ -14,7 +14,7 @@ import { DuplicateDialog } from '@/components/tasks/DuplicateDialog';
 import { LessonList } from '@/components/lessons/LessonList';
 import { StudentProgress } from '@/components/progress/StudentProgress';
 import { studentName, useLessonsFor, useLookup, useStudentTasks } from '@/hooks/data';
-import { STUDENT_STATUS, isDone } from '@/lib/labels';
+import { STUDENT_STATUS, isDone, isPending } from '@/lib/labels';
 import { cvar } from '@/lib/colors';
 import { capitalize, durationLabel, fmt, fromDateKey, timeRange, weekKey, weekLabel } from '@/lib/dates';
 import type { Student, TaskWithAssignments } from '@/lib/types';
@@ -67,7 +67,7 @@ function StudentDetail({ student, tab }: { student: Student; tab: Tab }) {
   const now = new Date();
   const upcoming = lessons.filter((l) => new Date(l.ends_at) >= now && l.status === 'scheduled').sort((a, b) => a.starts_at.localeCompare(b.starts_at));
   const past = lessons.filter((l) => new Date(l.ends_at) < now || l.status !== 'scheduled');
-  const pending = tasks.filter((t) => t.assignments.some((a) => a.student_id === student.id && !isDone(a.status))).length;
+  const pending = tasks.filter((t) => t.assignments.some((a) => a.student_id === student.id && isPending(a.status))).length;
 
   return (
     <div>

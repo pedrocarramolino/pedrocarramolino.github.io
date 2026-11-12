@@ -2,7 +2,7 @@ import { describe, expect, it } from 'vitest';
 import { generateOccurrences } from './recurrence';
 import { findConflicts, overlaps } from './conflicts';
 import { weekKey, weekLabel, fromDateKey, toDateKey, durationLabel, isoWeekday } from './dates';
-import { nextStatus } from './labels';
+import { nextStatus, normalizeStatus } from './labels';
 
 describe('recurrencia', () => {
   it('genera solo los días elegidos entre inicio y fin (ambos incluidos)', () => {
@@ -60,10 +60,15 @@ describe('fechas', () => {
 
 describe('estados de tarea', () => {
   it('avanza en ciclo', () => {
-    expect(nextStatus('pending')).toBe('in_progress');
-    expect(nextStatus('in_progress')).toBe('completed');
-    expect(nextStatus('completed')).toBe('reviewed');
-    expect(nextStatus('reviewed')).toBe('pending');
+    expect(nextStatus('pending')).toBe('completed');
+    expect(nextStatus('completed')).toBe('not_completed');
+    expect(nextStatus('not_completed')).toBe('pending');
+  });
+  it('convierte los estados antiguos', () => {
+    expect(normalizeStatus('in_progress')).toBe('pending');
+    expect(normalizeStatus('reviewed')).toBe('completed');
+    expect(normalizeStatus('not_completed')).toBe('not_completed');
+    expect(normalizeStatus(undefined)).toBe('pending');
   });
 });
 

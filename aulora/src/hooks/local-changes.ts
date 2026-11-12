@@ -125,7 +125,7 @@ function applyTask(qc: QueryClient, id: string, t: TaskWithAssignments | null) {
   const pending = qc.getQueryData<Assignment[]>(['pending-assignments']);
   if (Array.isArray(pending)) {
     const others = pending.filter((a) => a.task_id !== id);
-    const mine = t ? t.assignments.filter((a) => a.status === 'pending' || a.status === 'in_progress') : [];
+    const mine = t ? t.assignments.filter((a) => a.status === 'pending') : [];
     qc.setQueryData(['pending-assignments'], [...others, ...mine]);
   }
 }

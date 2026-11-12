@@ -1,6 +1,6 @@
 'use client';
 import { useState } from 'react';
-import { CalendarClock, Check, CheckCheck, ChevronLeft, ChevronRight, Circle, CircleDot, Copy, Flag, MoreHorizontal, Pencil, Plus, Trash2, Users } from 'lucide-react';
+import { CalendarClock, Check, ChevronLeft, ChevronRight, Circle, CornerDownRight, Copy, Flag, MoreHorizontal, Pencil, Plus, Trash2, Users, X } from 'lucide-react';
 import { addWeeks } from 'date-fns';
 import { Button, Input, Badge } from '@/components/ui/controls';
 import { Menu, useConfirm } from '@/components/ui/overlay';
@@ -13,21 +13,27 @@ import { fmt, fromDateKey, toDateKey, weekKey, weekLabel } from '@/lib/dates';
 import type { Assignment, AssignmentStatus, TaskWithAssignments } from '@/lib/types';
 import { useUi } from '@/components/layout/ui-store';
 
+/** Pendiente: neutro · Completa: verde · No completada: rojo suave. */
 const STATUS_STYLE: Record<AssignmentStatus, string> = {
   pending: 'text-muted',
-  in_progress: 'text-warning',
-  completed: 'text-success',
-  reviewed: 'text-accent',
+  completed: 'bg-success-soft text-success',
+  not_completed: 'bg-danger-soft text-danger',
 };
 
 export function StatusIcon({ status, className }: { status: AssignmentStatus; className?: string }) {
-  const Icon = status === 'pending' ? Circle : status === 'in_progress' ? CircleDot : status === 'completed' ? Check : CheckCheck;
-  return <Icon className={cn('size-[18px]', STATUS_STYLE[status], className)} strokeWidth={status === 'completed' || status === 'reviewed' ? 2.6 : 2} />;
+  if (status === 'pending') return <Circle className={cn('size-[18px]', STATUS_STYLE.pending, className)} strokeWidth={2} />;
+  const Icon = status === 'completed' ? Check : X;
+  return (
+    <span data-status={status} className={cn('flex size-[18px] items-center justify-center rounded-full', STATUS_STYLE[status], className)}>
+      <Icon className="size-3" strokeWidth={3} />
+    </span>
+  );
 }
 
 /**
- * Botón de estado: un toque avanza al siguiente estado
- * (Pendiente → En proceso → Completada → Revisada → Pendiente).
+ * Botón de estado: un toque avanza al siguiente estado, en ciclo
+ * (Pendiente → Completa → No completada → Pendiente). Al marcar «No completada»
+ * la tarea pasa sola a la semana siguiente como pendiente.
  */
 export function StatusButton({ assignments, size = 'md' }: { assignments: Assignment[]; size?: 'sm' | 'md' }) {
   const status = aggregateStatus(assignments);
@@ -42,7 +48,8 @@ export function StatusButton({ assignments, size = 'md' }: { assignments: Assign
         action.mutate(target);
       }}
       disabled={action.isPending}
-      title={`${ASSIGNMENT_STATUS[status]} · tocar para marcar «${ASSIGNMENT_STATUS[target]}»`}
+      data-status={status}
+      title={`${ASSIGNMENT_STATUS[status]} · tocar para marcar «${ASSIGNMENT_STATUS[target]}»${target === 'not_completed' ? ' (pasará a la semana siguiente)' : ''}`}
       aria-label={`Estado: ${ASSIGNMENT_STATUS[status]}. Cambiar a ${ASSIGNMENT_STATUS[target]}`}
       className={cn(
         'flex shrink-0 items-center justify-center rounded-full transition-transform active:scale-90 disabled:opacity-50',
@@ -56,11 +63,9 @@ export function StatusButton({ assignments, size = 'md' }: { assignments: Assign
 }
 
 export function aggregateStatus(asg: Assignment[]): AssignmentStatus {
-  if (!asg.length) return 'pending';
-  if (asg.every((a) => a.status === 'reviewed')) return 'reviewed';
+  if (!asg.length || asg.some((a) => a.status === 'pending')) return 'pending';
   if (asg.every((a) => isDone(a.status))) return 'completed';
-  if (asg.some((a) => a.status !== 'pending')) return 'in_progress';
-  return 'pending';
+  return 'not_completed';
 }
 
 export function CategoryBadge({ id, lookup }: { id: string | null; lookup: Lookup }) {
@@ -134,8 +139,18 @@ export function TaskRow({
               <Flag className="size-3" /> Alta
             </Badge>
           ) : null}
-          {status !== 'pending' && !done ? <Badge className="bg-warning-soft text-warning">En proceso</Badge> : null}
-          {status === 'reviewed' ? <Badge className="bg-accent-soft text-accent">Revisada</Badge> : null}
+          {status === 'not_completed' ? (
+            <span title="Se ha añadido como pendiente a la semana siguiente">
+              <Badge className="bg-danger-soft text-danger">No completada</Badge>
+            </span>
+          ) : null}
+          {task.carried_from ? (
+            <span title="Procede de una tarea no completada de la semana anterior">
+              <Badge className="bg-surface-2 text-fg-2">
+                <CornerDownRight className="size-3" /> Arrastrada de la semana anterior
+              </Badge>
+            </span>
+          ) : null}
           {task.due_on ? (
             <span className="inline-flex items-center gap-1 text-[11px] text-muted">
               <CalendarClock className="size-3" />
