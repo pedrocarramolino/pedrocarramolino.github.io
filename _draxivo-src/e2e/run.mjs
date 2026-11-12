@@ -34,7 +34,8 @@ const browser = await chromium.launch();
 const ctx = await browser.newContext({ ...devices['iPhone 13'], acceptDownloads: true, locale: 'es-ES', timezoneId: 'Europe/Madrid' });
 const page = await ctx.newPage();
 page.setDefaultTimeout(6000);
-page.on('console', (m) => m.type() === 'error' && consoleErrors.push(m.text()));
+// El propio Chrome avisa en incógnito de que no admite Push; no es un error de la app.
+page.on('console', (m) => m.type() === 'error' && !/Push API in incognito/.test(m.text()) && consoleErrors.push(m.text()));
 page.on('pageerror', (e) => consoleErrors.push(String(e)));
 const shot = (n) => page.screenshot({ path: `${SHOTS}/${n}.png`, fullPage: false });
 const go = async (hash) => {

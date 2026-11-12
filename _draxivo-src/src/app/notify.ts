@@ -21,7 +21,7 @@ export async function requestNotifyPermission(): Promise<NotifyState> {
 const TAG = 'draxivo-rest';
 
 /** Muestra el aviso de fin de descanso (a través del service worker cuando existe). */
-export async function showRestNotification(body: string): Promise<boolean> {
+export async function showRestNotification(body: string, endsAt?: number): Promise<boolean> {
   if (notifyState() !== 'granted') return false;
   const title = 'Descanso terminado';
   const options: NotificationOptions & { renotify?: boolean; vibrate?: number[] } = {
@@ -31,7 +31,7 @@ export async function showRestNotification(body: string): Promise<boolean> {
     icon: 'icons/icon-192.png',
     badge: 'icons/icon-192.png',
     vibrate: [200, 100, 200],
-    data: { url: location.href },
+    data: { url: location.href, endsAt },
   };
   try {
     const reg = 'serviceWorker' in navigator ? await navigator.serviceWorker.getRegistration() : undefined;

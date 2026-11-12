@@ -4,6 +4,7 @@ import { useSettings, useToast } from '../app/context';
 import { navigate } from '../app/router';
 import { isStandalone } from '../app/pwa';
 import { notifyState, requestNotifyPermission, showRestNotification } from '../app/notify';
+import { ensurePushSubscription } from '../app/push';
 import { applyImport, downloadText, exportBackup, exportCSV, planImport, type ImportPlan } from '../db/backup';
 import { requestPersistentStorage, storageEstimate } from '../db/database';
 import { wipeAllData } from '../db/repo';
@@ -22,6 +23,7 @@ export function Profile() {
     setPerm(p);
     if (p === 'granted') {
       update({ restNotify: true });
+      ensurePushSubscription();
       showRestNotification('Así te avisaremos cuando termine el descanso.');
     } else if (p === 'unsupported') toast('Este navegador no admite notificaciones. En iPhone, añade DRAXIVO a la pantalla de inicio.', { tone: 'error' });
     else toast('Permiso de notificaciones denegado. Actívalo en los ajustes del navegador o del sistema.', { tone: 'error' });
