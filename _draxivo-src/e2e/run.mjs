@@ -34,7 +34,8 @@ const browser = await chromium.launch();
 const ctx = await browser.newContext({ ...devices['iPhone 13'], acceptDownloads: true, locale: 'es-ES', timezoneId: 'Europe/Madrid' });
 const page = await ctx.newPage();
 page.setDefaultTimeout(6000);
-page.on('console', (m) => m.type() === 'error' && consoleErrors.push(m.text()));
+// El propio Chrome avisa en incógnito de que no admite Push; no es un error de la app.
+page.on('console', (m) => m.type() === 'error' && !/Push API in incognito/.test(m.text()) && consoleErrors.push(m.text()));
 page.on('pageerror', (e) => consoleErrors.push(String(e)));
 const shot = (n) => page.screenshot({ path: `${SHOTS}/${n}.png`, fullPage: false });
 const go = async (hash) => {
@@ -76,7 +77,7 @@ await step('Crear rutina con ejercicios, superserie y calentamiento', async () =
   await page.getByRole('button', { name: 'Añadir ejercicios' }).click();
   const search = page.getByRole('searchbox', { name: 'Buscar ejercicio' });
   await search.fill('press de banca con barra');
-  await page.getByRole('button', { name: /Press de banca con barra/ }).click();
+  await page.getByRole('button', { name: /^Press de banca con barra/ }).click();
   await search.fill('remo con barra');
   await page.getByRole('button', { name: /^Remo con barra/ }).click();
   await page.getByRole('button', { name: 'Añadir 2' }).click();
@@ -350,6 +351,166 @@ await step('Generador: pecho 20 min con mancuernas, editar, sustituir y guardar 
   await page.getByRole('heading', { name: 'Hoy' }).waitFor();
   await go('/routines');
   await page.getByText(/^Pecho · 20 min/).first().waitFor();
+});
+
+await step('Notificación al terminar el descanso con la app en segundo plano', async () => {
+  // Chromium sin interfaz deniega siempre el permiso: se simula concedido y se registran los avisos.
+  await page.addInitScript(() => {
+    window.__notes = [];
+    const record = async (title, opts) => void window.__notes.push({ title, body: opts?.body, tag: opts?.tag });
+    Object.defineProperty(Notification, 'permission', { configurable: true, get: () => 'granted' });
+    Notification.requestPermission = async () => 'granted';
+    ServiceWorkerRegistration.prototype.showNotification = function (t, o) { return record(t, o); };
+    window.__vis = 'visible';
+    Object.defineProperty(document, 'visibilityState', { configurable: true, get: () => window.__vis });
+    Object.defineProperty(document, 'hidden', { configurable: true, get: () => window.__vis === 'hidden' });
+  });
+  await page.reload();
+  await go('/profile');
+  const sw = page.getByRole('switch', { name: /^Notificación al terminar el descanso/ });
+  await sw.scrollIntoViewIfNeeded();
+  await sw.click();
+  await page.waitForFunction(() => window.__notes.length === 1);
+  await page.waitForTimeout(400);
+  assert(await sw.isChecked(), 'el ajuste no quedó activado');
+  await page.reload();
+  assert(await page.getByRole('switch', { name: /^Notificación al terminar el descanso/ }).isChecked(), 'el ajuste no se guardó');
+  await go('/train');
+  await page.getByRole('button', { name: 'Empezar Torso A' }).click();
+  const press = page.locator('section[aria-label="Press de banca con barra"]');
+  await press.getByLabel('Peso serie 1', { exact: true }).fill('60');
+  await press.getByLabel('Repeticiones serie 1', { exact: true }).fill('8');
+  await press.getByLabel('Completar serie 1', { exact: true }).click();
+  // Press y remo forman superserie: el descanso empieza al completar el remo.
+  const remo = page.locator('section[aria-label="Remo con barra"]');
+  await remo.getByLabel('Peso serie 1', { exact: true }).fill('50');
+  await remo.getByLabel('Repeticiones serie 1', { exact: true }).fill('10');
+  await remo.getByLabel('Completar serie 1', { exact: true }).click();
+  await page.getByRole('timer').waitFor();
+  // Acorta el descanso a unos segundos y pasa la app a segundo plano.
+  const left = async () => {
+    const t = await page.getByRole('timer').innerText();
+    const m = t.match(/(\d+):(\d{2})/);
+    return m ? Number(m[1]) * 60 + Number(m[2]) : 0;
+  };
+  while ((await left()) > 20) await page.getByRole('button', { name: 'Restar 15 segundos' }).click();
+  await page.evaluate(() => { window.__vis = 'hidden'; document.dispatchEvent(new Event('visibilitychange')); });
+  await page.waitForFunction(() => window.__notes.length === 1, null, { timeout: 25000 });
+  const n = await page.evaluate(() => window.__notes[0]);
+  assert(n.title === 'Descanso terminado' && /Remo con barra/.test(n.body), 'notificación incorrecta: ' + JSON.stringify(n));
+  // Con la app visible no se envía notificación (ya suenan sonido y vibración).
+  await page.evaluate(() => { window.__vis = 'visible'; document.dispatchEvent(new Event('visibilitychange')); });
+  await press.getByLabel('Peso serie 2', { exact: true }).fill('60');
+  await press.getByLabel('Repeticiones serie 2', { exact: true }).fill('8');
+  await press.getByLabel('Completar serie 2', { exact: true }).click();
+  await remo.getByLabel('Peso serie 2', { exact: true }).fill('50');
+  await remo.getByLabel('Repeticiones serie 2', { exact: true }).fill('10');
+  await remo.getByLabel('Completar serie 2', { exact: true }).click();
+  while ((await left()) > 5) await page.getByRole('button', { name: 'Restar 15 segundos' }).click().catch(() => {});
+  await page.waitForTimeout(7000);
+  assert((await page.evaluate(() => window.__notes.length)) === 1, 'notificó con la app visible');
+  await page.getByRole('button', { name: 'Descartar entrenamiento' }).click();
+  await page.getByRole('alertdialog').getByRole('button', { name: 'Descartar' }).click();
+  await page.getByRole('heading', { name: 'Hoy' }).waitFor();
+});
+
+await step('Biblioteca ampliada: búsqueda, filtros por grupo, material y nivel', async () => {
+  await go('/exercises');
+  const rows = page.locator('.list .row-button');
+  const subs = () => page.locator('.list .row-button .row-subtitle').allInnerTexts();
+  assert((await rows.count()) >= 200, 'biblioteca con pocos ejercicios: ' + (await rows.count()));
+  const search = page.getByRole('searchbox', { name: 'Buscar ejercicio' });
+  // Por nombre, por nombre en inglés y por material.
+  await search.fill('hip thrust');
+  await page.locator('.list .row-title', { hasText: 'Hip thrust con barra' }).waitFor();
+  await search.fill('bench press');
+  await page.locator('.list .row-title', { hasText: 'Press de banca con barra' }).waitFor();
+  await search.fill('zancada kettlebell');
+  await page.locator('.list .row-title', { hasText: 'Zancada con kettlebell' }).waitFor();
+  await search.fill('');
+  const group = page.getByRole('group', { name: 'Filtrar por grupo muscular' });
+  const equip = page.getByRole('group', { name: 'Filtrar por material' });
+  const level = page.getByRole('group', { name: 'Filtrar por nivel' });
+  await equip.getByRole('button', { name: 'Kettlebell', exact: true }).click();
+  await page.waitForTimeout(150);
+  let s = await subs();
+  assert(s.length >= 12 && s.every((t) => t.includes('Kettlebell')), 'filtro kettlebell: ' + s.length);
+  await equip.getByRole('button', { name: 'Kettlebell', exact: true }).click();
+  await level.getByRole('button', { name: 'Avanzado', exact: true }).click();
+  await page.waitForTimeout(150);
+  s = await subs();
+  assert(s.length >= 8 && s.every((t) => t.includes('Avanzado')), 'filtro avanzado');
+  await level.getByRole('button', { name: 'Principiante', exact: true }).click();
+  await group.getByRole('button', { name: 'Glúteos', exact: true }).click();
+  await equip.getByRole('button', { name: 'Peso corporal', exact: true }).click();
+  await page.waitForTimeout(150);
+  s = await subs();
+  assert(s.length >= 4 && s.every((t) => t.includes('Peso corporal') && t.includes('Principiante')), 'filtro combinado: ' + s.join(' | '));
+  assert(/^Glúteos/.test(s[0]), 'primero los de glúteo principal: ' + s[0]);
+  await group.getByRole('button', { name: 'Piernas', exact: true }).click();
+  await page.waitForTimeout(150);
+  s = await subs();
+  assert(s.length >= 3 && /^(Cuádriceps|Isquiotibiales)/.test(s[0]), 'grupo piernas: ' + s[0]);
+  await page.getByRole('button', { name: 'Quitar filtros' }).click();
+  await page.waitForTimeout(150);
+  assert((await rows.count()) >= 200, 'no se quitaron los filtros');
+  await noHScroll('biblioteca');
+  await shot('20-biblioteca');
+});
+
+await step('Ficha: pasos, seguridad, errores frecuentes y sustituciones', async () => {
+  await go('/exercises/ex-hip-thrust-mancuerna');
+  await page.locator('.ex-hero svg').waitFor();
+  for (const t of ['Paso a paso', 'Consejos de seguridad', 'Errores frecuentes', 'Variantes y sustituciones']) await page.getByRole('heading', { name: t }).waitFor();
+  assert((await page.locator('.steps-list li').count()) >= 3, 'faltan pasos');
+  assert((await page.locator('.guide-list li').count()) >= 4, 'faltan consejos o errores');
+  await page.locator('.guide-tags', { hasText: 'Principiante' }).waitFor();
+  const alt = page.locator('.section', { hasText: 'Variantes y sustituciones' }).locator('.row-button').first();
+  const altName = await alt.locator('.row-title').innerText();
+  await alt.click();
+  await page.getByRole('heading', { name: altName, exact: true }).waitFor();
+  await noHScroll('ficha');
+  await shot('21-ficha');
+});
+
+await step('Elegir desde rutina: guía visible, selección e imagen en la rutina y el entrenamiento', async () => {
+  await go('/routines/new');
+  await page.getByPlaceholder('Ej.: Torso A').fill('Kettlebell en casa');
+  await page.getByRole('button', { name: 'Añadir ejercicios' }).click();
+  const dlg = page.getByRole('dialog');
+  await dlg.getByRole('group', { name: 'Filtrar por material' }).getByRole('button', { name: 'Kettlebell', exact: true }).click();
+  await dlg.getByRole('button', { name: 'Cómo se hace: Swing con kettlebell' }).click();
+  const guide = page.getByRole('dialog', { name: 'Cómo se hace' });
+  await guide.locator('.ex-hero svg').waitFor();
+  await guide.getByRole('heading', { name: 'Swing con kettlebell' }).waitFor();
+  await guide.getByRole('heading', { name: 'Paso a paso' }).waitFor();
+  await page.waitForTimeout(600);
+  await shot('22-guia-selector');
+  await guide.getByRole('button', { name: 'Seleccionar' }).click();
+  await page.locator('.picker-tray-item', { hasText: 'Swing con kettlebell' }).waitFor();
+  assert((await page.locator('.picker-tray-item .exercise-art').count()) === 1, 'sin imagen en la selección');
+  await page.getByRole('button', { name: /^Sentadilla goblet con kettlebell/ }).click();
+  await page.getByRole('button', { name: 'Añadir 2' }).click();
+  await page.locator('.wex-name h3', { hasText: 'Swing con kettlebell' }).waitFor();
+  await page.getByRole('button', { name: 'Cómo se hace: Sentadilla goblet con kettlebell' }).click();
+  await page.getByRole('dialog', { name: 'Cómo se hace' }).getByRole('heading', { name: 'Sentadilla goblet con kettlebell' }).waitFor();
+  await page.keyboard.press('Escape');
+  await page.getByRole('button', { name: 'Guardar rutina' }).click();
+  await page.getByRole('heading', { name: 'Kettlebell en casa' }).waitFor();
+  // Entrenar con la rutina: la guía se abre sin salir de la sesión y las series se registran.
+  await page.getByRole('button', { name: /^Empezar/ }).first().click();
+  await page.getByRole('button', { name: 'Terminar' }).waitFor();
+  const swing = page.locator('section[aria-label="Swing con kettlebell"]');
+  await swing.getByRole('button', { name: 'Cómo se hace: Swing con kettlebell' }).click();
+  await page.getByRole('dialog', { name: 'Cómo se hace' }).getByRole('heading', { name: 'Errores frecuentes' }).waitFor();
+  await page.keyboard.press('Escape');
+  await swing.getByLabel('Peso serie 1', { exact: true }).fill('16');
+  await swing.getByLabel('Repeticiones serie 1', { exact: true }).fill('15');
+  await swing.getByLabel('Completar serie 1', { exact: true }).click();
+  await page.getByRole('timer').waitFor();
+  await page.getByRole('button', { name: 'Descartar entrenamiento' }).click();
+  await page.getByRole('alertdialog').getByRole('button', { name: 'Descartar' }).click();
+  await page.getByRole('heading', { name: 'Hoy' }).waitFor();
 });
 
 await step('Ilustraciones: cada ejercicio de la biblioteca tiene la suya', async () => {

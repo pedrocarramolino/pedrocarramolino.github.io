@@ -6,7 +6,8 @@ import { ExerciseArt, templateKeyFor } from '../src/ui/ExerciseArt';
 
 const params = new URLSearchParams(location.search);
 if (params.get('theme')) document.documentElement.setAttribute('data-theme', params.get('theme')!);
-const all = seedExercises();
+const only = params.get('new') ? new Set(params.get('new')!.split(',')) : null;
+const all = seedExercises().filter((e) => !only || only.has(e.id.slice(3)));
 const from = Number(params.get('from') ?? 0);
 const count = Number(params.get('count') ?? 200);
 const list = all.slice(from, from + count);

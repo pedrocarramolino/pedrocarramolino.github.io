@@ -24,6 +24,7 @@ export const EQUIPMENT: Record<Equipment, string> = {
   polea: 'Poleas',
   peso_corporal: 'Peso corporal',
   banda: 'Bandas elásticas',
+  kettlebell: 'Kettlebell',
   otros: 'Otros',
 };
 

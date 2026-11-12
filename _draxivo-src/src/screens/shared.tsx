@@ -1,5 +1,6 @@
-import { useDeferredValue, useMemo, useState } from 'react';
-import { Check, Plus, Search } from 'lucide-react';
+import { useMemo, useState } from 'react';
+import { Check, Info, Plus } from 'lucide-react';
+import { ExerciseFilters, ExerciseGuideSheet, exerciseMeta, useExerciseFilter } from './ExerciseGuide';
 import type { Equipment, Exercise, MovementType, MuscleGroup, TrackingType } from '../db/types';
 import { useQuery } from '../app/hooks';
 import { getActiveWorkout, listBodyWeights, listExercises, listRoutines, listWorkouts, saveBodyWeight, saveExercise, startWorkout } from '../db/repo';
@@ -21,12 +22,7 @@ export function useExerciseMap() {
   return useMemo(() => new Map((all ?? []).map((e) => [e.id, e])), [all]);
 }
 
-export function normalize(s: string) {
-  return s
-    .toLocaleLowerCase('es')
-    .normalize('NFD')
-    .replace(/[̀-ͯ]/g, '');
-}
+export { normalize } from '../lib/text';
 
 /** Inicia un entrenamiento manejando el caso de que ya exista uno en curso. */
 export function useStartWorkout() {
@@ -63,89 +59,103 @@ export function ExercisePicker({
   title?: string;
 }) {
   const all = useExercises(false);
-  const [q, setQ] = useState('');
-  const [muscle, setMuscle] = useState<MuscleGroup | ''>('');
-  const [equip, setEquip] = useState<Equipment | ''>('');
+  const filter = useExerciseFilter(all);
+  const { list } = filter;
   const [sel, setSel] = useState<string[]>([]);
   const [creating, setCreating] = useState(false);
-  const deferredQ = useDeferredValue(q);
-  const list = useMemo(() => {
-    const nq = normalize(deferredQ.trim());
-    return (all ?? []).filter(
-      (e) => (!nq || normalize(e.name).includes(nq)) && (!muscle || e.primaryMuscle === muscle || e.secondaryMuscles.includes(muscle)) && (!equip || e.equipment === equip),
-    );
-  }, [all, deferredQ, muscle, equip]);
+  const [guide, setGuide] = useState<Exercise | null>(null);
+  const byId = useMemo(() => new Map((all ?? []).map((e) => [e.id, e])), [all]);
   const close = () => {
     setSel([]);
-    setQ('');
+    filter.set({ q: '' });
     onClose();
   };
   const done = (ids: string[]) => {
-    const byId = new Map((all ?? []).map((e) => [e.id, e]));
     onPick(ids.map((id) => byId.get(id)!).filter(Boolean));
     close();
   };
+  const toggle = (id: string) => setSel((s) => (s.includes(id) ? s.filter((x) => x !== id) : [...s, id]));
+  const chosen = sel.map((id) => byId.get(id)).filter((e): e is Exercise => !!e);
   return (
     <>
       <Sheet
-        open={open && !creating}
+        open={open && !creating && !guide}
         onClose={close}
         title={title}
         size="full"
         footer={
           multi ? (
-            <Button variant="primary" disabled={!sel.length} onClick={() => done(sel)}>
-              {sel.length ? `Añadir ${sel.length}` : 'Selecciona ejercicios'}
-            </Button>
+            <div className="picker-footer">
+              {chosen.length > 0 && (
+                <div className="picker-tray" aria-label="Ejercicios seleccionados">
+                  {chosen.map((e) => (
+                    <button key={e.id} type="button" className="picker-tray-item" onClick={() => toggle(e.id)} aria-label={`Quitar ${e.name}`}>
+                      <ExerciseArt exercise={e} size={44} />
+                      <span>{e.name}</span>
+                    </button>
+                  ))}
+                </div>
+              )}
+              <Button variant="primary" block disabled={!sel.length} onClick={() => done(sel)}>
+                {sel.length ? `Añadir ${sel.length}` : 'Selecciona ejercicios'}
+              </Button>
+            </div>
           ) : undefined
         }
       >
-        <div className="search">
-          <Search size={18} />
-          <Input type="search" placeholder="Buscar ejercicio" value={q} onChange={(e) => setQ(e.target.value)} aria-label="Buscar ejercicio" enterKeyHint="search" autoComplete="off" autoCorrect="off" spellCheck={false} data-autofocus />
-        </div>
-        <MuscleChips value={muscle} onChange={setMuscle} />
-        <div className="chips">
-          <button type="button" className={cx('chip', !equip && 'active')} onClick={() => setEquip('')}>
-            Todo el equipo
-          </button>
-          {(Object.keys(EQUIPMENT) as Equipment[]).map((k) => (
-            <button key={k} type="button" className={cx('chip', equip === k && 'active')} aria-pressed={equip === k} onClick={() => setEquip(equip === k ? '' : k)}>
-              {EQUIPMENT[k]}
+        <ExerciseFilters filter={filter} autoFocus />
+        <div className="picker-count small muted">
+          {list.length} ejercicios
+          {filter.active && (
+            <button type="button" className="link-btn" onClick={filter.reset}>
+              Quitar filtros
             </button>
-          ))}
+          )}
         </div>
-        <Button variant="plain" icon={<Plus size={18} />} onClick={() => setCreating(true)} className="mt">
-          Crear ejercicio personalizado
-        </Button>
         <div className="list mt">
           {list.map((e) => {
             const on = sel.includes(e.id);
             return (
-              <button
-                key={e.id}
-                type="button"
-                className="row row-button"
-                // Evita que el buscador pierda el foco (y se cierre el teclado) al elegir un resultado.
-                onMouseDown={(ev) => ev.preventDefault()}
-                aria-pressed={multi ? on : undefined}
-                onClick={() => (multi ? setSel((s) => (on ? s.filter((x) => x !== e.id) : [...s, e.id])) : done([e.id]))}
-              >
-                <ExerciseArt exercise={e} size={52} />
-                <span className="row-main">
-                  <span className="row-title">{e.name}</span>
-                  <span className="row-subtitle">
-                    {MUSCLES[e.primaryMuscle]} · {EQUIPMENT[e.equipment]}
-                    {e.custom ? ' · Personalizado' : ''}
+              <div key={e.id} className={cx('row pick-row', on && 'picked')}>
+                <button
+                  type="button"
+                  className="pick-main"
+                  // Evita que el buscador pierda el foco (y se cierre el teclado) al elegir un resultado.
+                  onMouseDown={(ev) => ev.preventDefault()}
+                  aria-pressed={multi ? on : undefined}
+                  onClick={() => (multi ? toggle(e.id) : done([e.id]))}
+                >
+                  <ExerciseArt exercise={e} size={64} />
+                  <span className="row-main">
+                    <span className="row-title">{e.name}</span>
+                    <span className="row-subtitle">{exerciseMeta(e)}</span>
                   </span>
-                </span>
-                {multi && <span className={cx('check-btn picker-check', on && 'on')}>{on && <Check size={16} strokeWidth={3} />}</span>}
-              </button>
+                  {multi && <span className={cx('check-btn picker-check', on && 'on')}>{on && <Check size={16} strokeWidth={3} />}</span>}
+                </button>
+                <button type="button" className="pick-info" onMouseDown={(ev) => ev.preventDefault()} onClick={() => setGuide(e)} aria-label={`Cómo se hace: ${e.name}`}>
+                  <Info size={20} />
+                </button>
+              </div>
             );
           })}
           {!list.length && <div className="row muted">No hay ejercicios con esos filtros.</div>}
         </div>
+        <Button variant="plain" icon={<Plus size={18} />} onClick={() => setCreating(true)} className="mt">
+          Crear ejercicio personalizado
+        </Button>
       </Sheet>
+      <ExerciseGuideSheet
+        ex={open ? guide : null}
+        onClose={() => setGuide(null)}
+        showDetailLink={false}
+        action={
+          guide
+            ? multi
+              ? { label: sel.includes(guide.id) ? 'Quitar de la selección' : 'Seleccionar', icon: sel.includes(guide.id) ? undefined : <Check size={18} />, run: () => { toggle(guide.id); setGuide(null); } }
+              : { label: 'Elegir este ejercicio', icon: <Check size={18} />, run: () => { const g = guide; setGuide(null); done([g.id]); } }
+            : undefined
+        }
+      />
       <ExerciseForm
         open={open && creating}
         onClose={() => setCreating(false)}
@@ -157,7 +167,7 @@ export function ExercisePicker({
             close();
           }
         }}
-        initial={{ name: q }}
+        initial={{ name: filter.f.q }}
       />
     </>
   );

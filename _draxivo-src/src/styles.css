@@ -2834,3 +2834,144 @@ input.chip {
   gap: 2px;
   min-width: 0;
 }
+
+/* ---------- Biblioteca ampliada: filtros, selector y guía ---------- */
+.ex-filters .chips {
+  margin-bottom: 2px;
+}
+.picker-count {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  margin: 6px 2px 0;
+}
+.link-btn {
+  color: var(--blue);
+  font-weight: 600;
+  font-size: 14px;
+  min-height: 32px;
+  padding: 0 4px;
+}
+.pick-row {
+  padding: 0;
+  gap: 0;
+}
+.pick-row.picked {
+  background: var(--blue-soft);
+}
+.pick-main {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 10px 6px 10px 12px;
+  text-align: left;
+  min-height: 64px;
+  color: inherit;
+}
+.pick-main .exercise-art {
+  border-radius: 12px;
+  flex-shrink: 0;
+}
+.pick-info {
+  flex-shrink: 0;
+  width: 48px;
+  align-self: stretch;
+  display: grid;
+  place-items: center;
+  color: var(--blue);
+  border-left: 1px solid var(--sep);
+}
+.pick-main:active,
+.pick-info:active {
+  background: var(--surface-2);
+}
+.picker-footer {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  width: 100%;
+  min-width: 0;
+}
+.picker-tray {
+  display: flex;
+  gap: 8px;
+  overflow-x: auto;
+  scrollbar-width: none;
+  padding: 2px 0;
+}
+.picker-tray::-webkit-scrollbar {
+  display: none;
+}
+.picker-tray-item {
+  flex-shrink: 0;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 4px 10px 4px 4px;
+  border-radius: 12px;
+  background: var(--surface-2);
+  max-width: 220px;
+  font-size: 13px;
+  font-weight: 600;
+  text-align: left;
+}
+.picker-tray-item span {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.picker-tray-item .exercise-art {
+  border-radius: 8px;
+  flex-shrink: 0;
+}
+.wex-art-btn {
+  flex-shrink: 0;
+  border-radius: 14px;
+  padding: 0;
+  line-height: 0;
+}
+.wex-name:disabled,
+.wex-art-btn:disabled {
+  opacity: 1;
+}
+.guide-tags {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin-top: 10px;
+}
+.guide-tags .tag {
+  padding: 5px 11px;
+  font-size: 13px;
+}
+.guide-title {
+  font-size: 24px;
+  font-weight: 750;
+  letter-spacing: -0.02em;
+  margin-top: 14px;
+  line-height: 1.15;
+}
+.guide-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: grid;
+  gap: 10px;
+}
+.guide-list li {
+  display: grid;
+  grid-template-columns: 18px 1fr;
+  gap: 10px;
+  align-items: start;
+  font-size: 15px;
+}
+.guide-list svg {
+  margin-top: 2px;
+  color: var(--blue);
+}
+.guide-list-warn svg {
+  color: var(--warn);
+}
