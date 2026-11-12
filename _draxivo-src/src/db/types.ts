@@ -305,6 +305,8 @@ export interface Settings {
   autoStartRest: boolean;
   restSound: boolean;
   restVibration: boolean;
+  /** Notificación del sistema al terminar el descanso (requiere permiso). */
+  restNotify: boolean;
   theme: Theme;
   timezone: string;
   weightGoalType: 'perder' | 'ganar' | 'mantener' | null;

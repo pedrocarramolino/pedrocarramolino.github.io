@@ -14,6 +14,8 @@ import { ExerciseArt } from '../ui/ExerciseArt';
 import { ReorderList } from '../ui/reorder';
 import { ExercisePicker, useExerciseMap, useStartWorkout, useWorkouts } from './shared';
 import { uid } from '../lib/id';
+import { clearRestNotification, showRestNotification } from '../app/notify';
+import { ensurePushSubscription, scheduleRestPush } from '../app/push';
 
 // ---------- Sonido y vibración del descanso ----------
 let audioCtx: AudioContext | null = null;
@@ -137,6 +139,44 @@ export function WorkoutScreen({ editId }: { editId?: string }) {
       }
     }
   }, [remaining, w, settings.restSound, settings.restVibration]);
+
+  // Notificación del sistema: temporizador exacto, independiente del refresco de pantalla,
+  // para avisar aunque la app esté en segundo plano o con la pantalla bloqueada.
+  const restEndsAt = w?.rest && w.rest.pausedRemainingMs == null ? w.rest.endsAt : null;
+  const restLabel = w?.rest?.label ?? '';
+  useEffect(() => {
+    clearRestNotification();
+    if (!settings.restNotify || restEndsAt == null || editing) return;
+    const ms = restEndsAt - Date.now();
+    if (ms <= 0) return;
+    const t = window.setTimeout(() => {
+      // Si también llega el aviso del servidor, el service worker lo sustituye en silencio.
+      if (document.visibilityState === 'hidden') showRestNotification(restLabel ? `Siguiente serie: ${restLabel}` : 'Vuelve a entrenar.', restEndsAt);
+    }, ms);
+    return () => window.clearTimeout(t);
+  }, [restEndsAt, restLabel, settings.restNotify, editing]);
+  // Aviso push desde el servidor: llega aunque el sistema congele la app (iPhone, pantalla bloqueada).
+  const restEndsRef = useRef(restEndsAt);
+  restEndsRef.current = restEndsAt;
+  useEffect(() => {
+    if (settings.restNotify && !editing) ensurePushSubscription();
+  }, [settings.restNotify, editing]);
+  useEffect(() => {
+    const onVis = () => {
+      if (document.visibilityState === 'visible') {
+        clearRestNotification();
+        return;
+      }
+      const end = restEndsRef.current;
+      if (settings.restNotify && !editing && end != null) scheduleRestPush(end);
+    };
+    document.addEventListener('visibilitychange', onVis);
+    window.addEventListener('pagehide', onVis);
+    return () => {
+      document.removeEventListener('visibilitychange', onVis);
+      window.removeEventListener('pagehide', onVis);
+    };
+  }, [settings.restNotify, editing]);
 
   // Guardado defensivo al ocultar la página (bloqueo del dispositivo, cambio de app).
   const wRef = useRef(w);

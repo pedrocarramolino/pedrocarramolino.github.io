@@ -39,6 +39,7 @@ export function defaultSettings(now = Date.now()): Settings {
     autoStartRest: true,
     restSound: true,
     restVibration: true,
+    restNotify: false,
     theme: 'auto',
     timezone: deviceTimezone(),
     weightGoalType: null,

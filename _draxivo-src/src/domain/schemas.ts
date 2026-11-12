@@ -161,6 +161,7 @@ export const settingsSchema = z.object({
   autoStartRest: z.boolean(),
   restSound: z.boolean(),
   restVibration: z.boolean(),
+  restNotify: z.boolean().default(false),
   theme: z.enum(['auto', 'light', 'dark']),
   timezone: z.string(),
   weightGoalType: z.enum(['perder', 'ganar', 'mantener']).nullable(),
